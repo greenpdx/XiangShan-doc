@@ -1,19 +1,19 @@
-# 派遣 Dispatch
+# Despacho
 
-在香山处理器中，派遣部分逻辑实际上共包括两级流水级，第一级 `Dispatch` 负责将指令分类并发送至定点、浮点与访存三类派遣队列（Dispatch Queue），第二级 `Dispatch2Rs` 负责将对应类型的指令进一步根据不同的运算操作类型派遣至不同的保留站。
+En el procesador Xiangshan, la lógica de despacho consta en realidad de dos etapas de canalización. La primera etapa, Despacho, es responsable de clasificar las instrucciones y enviarlas a tres tipos de colas de despacho: de punto fijo, de punto flotante y de acceso a memoria. La segunda etapa, Despacho, es responsable de clasificar las instrucciones y enviarlas a tres tipos de colas de despacho: de punto fijo, de punto flotante y de acceso a memoria. La etapa `Dispatch2Rs` es responsable de despachar instrucciones del tipo correspondiente a diferentes estaciones de reserva según los diferentes tipos de operación.
 
-目前，派遣阶段整体的逻辑较长且复杂，仍然有很大的优化空间。
+En la actualidad, la lógica general de la etapa de despacho es larga y compleja, y todavía hay mucho margen de optimización.
 
-## 第一级 Dispatch
+## Despacho de primer nivel
 
-第一级派遣的源码在 `Dispatch.scala`，其中包含了对不同指令类型的判断、对每一条指令是否能够进入下一级的判断以及对 BusyTable 的置位（指令会在这一流水级把它的目的寄存器状态置为无效）。
+El código fuente del despacho de primer nivel está en `Dispatch.scala`, que incluye el juicio de diferentes tipos de instrucciones, el juicio de si cada instrucción puede ingresar al siguiente nivel y la configuración de BusyTable (la instrucción se colocará en este nivel de tubería). Su estado de registro de destino está establecido como no válido).
 
-需要注意的是，出于时序考虑，我们简化了指令可以继续进入下一级的条件。目前，当且仅当所有资源都是充足的（派遣队列有足够空项、ROB 有足够空项等），指令才能够进入下一级。也就是说，定点指令可能会因为浮点派遣队列满而被阻塞。
+Es importante tener en cuenta que, por consideraciones de tiempo, hemos simplificado las condiciones bajo las cuales las instrucciones pueden continuar al siguiente nivel. Actualmente, las instrucciones pueden ingresar a la siguiente etapa si y solo si todos los recursos son suficientes (la cola de despacho tiene suficientes entradas vacías, ROB tiene suficientes entradas vacías, etc.). Es decir, las instrucciones de punto fijo pueden bloquearse porque la cola de despacho de punto flotante está llena.
 
-## 派遣队列 Dispatch Queue
+## Cola de despacho
 
-派遣队列是第一级与第二级的桥梁，其中存放了一部分指令。在分支预测等重定向请求发生时，这个队列中的指令存在一定的可能性被刷 / 不能被刷，因此队列逻辑中还包含了对 `robIdx` 的取消判断。
+La cola de despacho es el puente entre el primer nivel y el segundo nivel, en el que se almacenan algunas instrucciones. Cuando ocurre una solicitud de redirección, como una predicción de bifurcación, existe una cierta posibilidad de que las instrucciones en esta cola se eliminen o no, por lo que la lógica de la cola también incluye una sentencia de cancelación para `robIdx`.
 
-## 第二级 Dispatch2Rs
+## Segundo nivel Dispatch2Rs
 
-第二级派遣负责的是根据不同的指令类型、不同的保留站可接受的指令类型，对指令做一个路由，将它们发送到不同的保留站。目前，我们实现了几种简单的派遣策略，且参数化系统还未完整测试。
+El despacho de segundo nivel es responsable de enrutar las instrucciones y enviarlas a diferentes estaciones de reserva en función de los diferentes tipos de instrucciones y los tipos de instrucciones aceptables para las diferentes estaciones de reserva. Actualmente, hemos implementado varias estrategias de despacho simples y el sistema parametrizado no ha sido probado completamente.
