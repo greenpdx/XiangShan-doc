@@ -4,12 +4,12 @@ ALU
 
 La ALU de Xiangshan admite instrucciones como suma, resta, lógica, ramificación y extensión parcial de bits.
 
-##MUL
+## MUL
 
 El multiplicador predeterminado de Xiangshan es un multiplicador de árbol de Wallace en cadena de 3 etapas, que también se puede cambiar a un multiplicador implementado directamente por `*` a través de la configuración.
 Optimice la sincronización mediante la resincronización del registro.
 
-##División
+## División
 
 Xiangshan utiliza el divisor de punto fijo SRT16[^1], que opera 4 bits por ciclo y procesa dos pasos antes y después del ciclo de división.
 
