@@ -1,53 +1,53 @@
-# 取指目标队列 (FTQ)
-这一章描述香山处理器取指目标队列 (Fetch Target Queue)的实现。
-<figure markdown>
-  ![ftq](../figs/frontend/ftq.svg){ width="700" }
-  <figcaption>FTQ 与其它模块的交互</figcaption>
-</figure>
+# Cola de destino de obtención (FTQ)
+Este capítulo describe la implementación de la cola de destino de obtención del procesador Xiangshan.
+<figura rebajada>
+ ![ftq](../figs/frontend/ftq.svg){ ancho="700" }
+ <figcaption>Interacción entre FTQ y otros módulos</figcaption>
+</figura>
 
-## 职能描述
-FTQ 是分支预测和取指单元之间的缓冲队列，它的主要职能是**暂存 BPU 预测的取指目标**，并根据这些取指目标**给 IFU 发送取指请求**。它的另一重要职能是**暂存 BPU 各个预测器的预测信息**，在指令提交后把这些信息送回 BPU 用作预测器的训练，因此它需要**维护指令从预测到提交的完整的生命周期**。由于后端存储 PC 的开销较大，当后端需要指令 PC 的时候，会到 FTQ 读取。
+## Descripción del trabajo
+FTQ es una cola intermedia entre las unidades de predicción de bifurcación y de obtención de instrucciones. Su función principal es almacenar temporalmente los objetivos de obtención de instrucciones predichos por la BPU y enviar solicitudes de obtención de instrucciones a la IFU en función de estos objetivos de obtención de instrucciones. Otra función importante es almacenar temporalmente la información de predicción de cada predictor de BPU y enviar esta información de vuelta a BPU para el entrenamiento del predictor después de que se envíe la instrucción. Por lo tanto, necesita mantener la instrucción desde la predicción hasta el envío. Ciclo de vida completo **. Dado que la PC de almacenamiento del backend tiene una gran sobrecarga, cuando el backend necesita dar instrucciones a la PC, acudirá a FTQ para leerlas.
 
-## 内部结构
-FTQ 是一个队列结构，但队列中每一项的内容是根据其自身特点存储在不同的存储结构中的。这些存储结构主要包括以下几种：
+Estructura interna
+FTQ es una estructura de cola, pero el contenido de cada elemento de la cola se almacena en una estructura de almacenamiento diferente según sus propias características. Estas estructuras de almacenamiento incluyen principalmente lo siguiente:
 
-- **ftq_pc_mem**: 寄存器堆实现，存储与指令地址相关的信息，包括如下的域
-  
-    - `startAddr` 预测块起始地址
-    - `nextLineAddr` 预测块下一个缓存行的起始地址
-    - `isNextMask` 预测块每一条可能的指令起始位置是否在按预测宽度对齐的下一个区域内
-    - `fallThruError` 预测出的下一个顺序取指地址是否存在错误
+- **ftq_pc_mem**: implementación de la pila de registros, almacena información relacionada con las direcciones de instrucciones, incluidos los siguientes campos
 
-- **ftq_pd_mem**: 寄存器堆实现，存储取指单元返回的预测块内的各条指令的译码信息，包括如下的域
+ - `startAddr` predice la dirección de inicio del bloque
+ - `nextLineAddr` predice la dirección inicial de la siguiente línea de caché del bloque
+ - `isNextMask` predice si cada posible posición de inicio de instrucción del bloque está en la siguiente región alineada con el ancho previsto
+ - `fallThruError` predice si la siguiente dirección de búsqueda de instrucción secuencial es incorrecta
 
-    - `brMask` 每条指令是否是条件分支指令
-    - `jmpInfo` 预测块末尾无条件跳转指令的信息，包括它是否存在、是 `jal` 还是 `jalr`、是否是 `call` 或 `ret` 指令
-    - `jmpOffset` 预测块末尾无条件跳转指令的位置
-    - `jalTarget` 预测块末尾 `jal` 的跳转地址
-    - `rvcMask` 每条指令是否是压缩指令
+- **ftq_pd_mem**: Implementación de la pila de registros, almacena la información de decodificación de cada instrucción en el bloque de predicción devuelto por la unidad de búsqueda de instrucciones, incluidos los siguientes campos
 
-- **ftq_redirect_sram**: SRAM 实现，存储那些在重定向时需要恢复的预测信息，主要包括和 RAS 和分支历史相关的信息
+ - `brMask` Si cada instrucción es una instrucción de bifurcación condicional
+ - `jmpInfo` predice información sobre la instrucción de salto incondicional al final del bloque, incluyendo si existe, si es un `jal` o un `jalr`, y si es una instrucción `call` o `ret`
+ - `jmpOffset` predice la ubicación de la instrucción de salto incondicional al final del bloque
+ - `jalTarget` predice la dirección de salto de `jal` al final del bloque
+ - `rvcMask` si cada instrucción es una instrucción comprimida
 
-- **ftq_meta_1r_sram**: SRAM 实现，存储其余的 BPU 预测信息
+- **ftq_redirect_sram**: implementación de SRAM, almacena información de predicción que debe restaurarse durante la redirección, incluida principalmente información relacionada con RAS y el historial de ramas
 
-- **ftb_entry_mem**: 寄存器堆实现，存储预测时 FTB 项的必要信息，用于提交后训练新的 FTB 项
+- **ftq_meta_1r_sram**: implementación de SRAM para almacenar el resto de la información de predicción de BPU
 
-另外还有一些例如队列指针、队列中各项的状态之类的信息用寄存器实现。
+- **ftb_entry_mem**: implementación del archivo de registro, almacena la información necesaria de la entrada FTB durante la predicción y se utiliza para entrenar nuevas entradas FTB después del envío
+
+Además, cierta información como los punteros de cola y el estado de cada elemento de la cola se implementa mediante registros.
 
 
-## 指令在 FTQ 中的生存周期
-指令以[预测块](./bp.md#pred-block)为单位，从 BPU 预测后便送进 FTQ，直到指令所在的[预测块](./bp.md#pred-block)中的所有指令全部在后端提交完成，FTQ 才会在存储结构中完全释放该[预测块](./bp.md#pred-block)所对应的项。这个过程中发生的事如下：
+## Ciclo de vida de las instrucciones en FTQ
+Las instrucciones se envían a FTQ en unidades de [bloques de predicción](./bp.md#pred-block) después de ser predichas por la BPU hasta que la instrucción está en el [bloque de predicción](./bp.md#pred-block). . Después de que se envíen todas las instrucciones en el backend, FTQ liberará por completo los elementos correspondientes al [bloque de predicción](./bp.md#pred-block) en la estructura de almacenamiento. Esto es lo que sucede durante este proceso:
 
-1. 预测块从 BPU 发出，进入 FTQ，`bpuPtr` 指针加一，初始化对应 FTQ 项的各种状态，把各种预测信息写入存储结构；如果预测块来自 BPU 覆盖预测逻辑，则恢复 `bpuPtr` 和 `ifuPtr`
-2. FTQ 向 IFU 发出取指请求，`ifuPtr` 指针加一，等待预译码信息写回
-3. IFU 写回预译码信息，`ifuWbPtr` 指针加一，如果预译码检测出了预测错误，则给 BPU 发送相应的重定向请求，恢复 `bpuPtr` 和 `ifuPtr`
-4. 指令进入后端执行，如果后端检测出了误预测，则通知 FTQ，给 IFU 和 BPU 发送重定向请求，恢复 `bpuPtr`、`ifuPtr` 和 `ifuWbPtr`
-5. 指令在后端提交，通知 FTQ，等 FTQ 项中所有的有效指令都已提交，`commPtr` 指针加一，从存储结构中读出相应的信息，送给 BPU 进行训练
+1. El bloque de predicción se envía desde la BPU y entra en el FTQ. El puntero `bpuPtr` se incrementa en uno, se inicializan los distintos estados de los elementos FTQ correspondientes y se escribe información de predicción en la estructura de almacenamiento. Si la predicción El bloque proviene de la lógica de predicción de sobrescritura de BPU, se restaura el puntero `bpuPtr`. ` y `ifuPtr`
+2. FTQ envía una solicitud de búsqueda de instrucciones a IFU, el puntero ifuPtr aumenta en 1 y espera a que se vuelva a escribir la información predecodificada.
+3. La IFU vuelve a escribir la información de predescodificación y el puntero `ifuWbPtr` se incrementa en uno. Si la predescodificación detecta un error de predicción, se envía una solicitud de redirección correspondiente a la BPU para restaurar `bpuPtr` e `ifuPtr`.
+4. La instrucción ingresa al backend para su ejecución. Si el backend detecta una predicción errónea, notifica a FTQ y envía una solicitud de redireccionamiento a IFU y BPU para restaurar `bpuPtr`, `ifuPtr` e `ifuWbPtr`
+5. La instrucción se envía al backend y se notifica al FTQ. Una vez que se han enviado todas las instrucciones válidas en el elemento FTQ, el puntero `commPtr` se incrementa en uno y la información correspondiente se lee desde la estructura de almacenamiento y se envía. a la BPU para entrenamiento.
 
-预测块 `n` 内指令的生存周期会涉及到 FTQ 中的 `bpuPtr`、`ifuPtr`、`ifuWbPtr` 和 `commPtr` 四个指针，当 `bpuPtr` 开始指向 `n+1` 时，预测块内的指令进入生存周期，当 `commPtr` 指向 `n+1` 后，预测块内的指令完成生存周期。
+El ciclo de vida de las instrucciones en el bloque de predicción `n` involucra cuatro punteros en FTQ: `bpuPtr`, `ifuPtr`, `ifuWbPtr` y `commPtr`. Cuando `bpuPtr` comienza a apuntar a `n+1`, el bloque de predicción Las instrucciones en el bloque de predicción ingresan al ciclo de vida, y cuando `commPtr` apunta a `n+1`, las instrucciones en el bloque de predicción completan el ciclo de vida.
 
-## FTQ 的其它功能
-- 由于 BPU 基本无阻塞，它经常能走到 IFU 的前面，于是 BPU 提供的这些还没发到 IFU 的取指请求就可以用作指令预取，FTQ 中实现了这部分逻辑，直接给指令缓存发送预取请求
-- FTQ 汇总了前端的大多数信息，因此实现了很多仿真时可以获取的性能计数器，具体参见[源代码](https://github.com/OpenXiangShan/XiangShan/blob/20bb5c4c094f06264df0e406d0df058f04ccc21c/src/main/scala/xiangshan/frontend/NewFtq.scala#L1024-L1206)
+## Otras características de FTQ
+- Dado que la BPU es básicamente no bloqueante, a menudo puede adelantarse a la IFU, por lo que las solicitudes de búsqueda de instrucciones proporcionadas por la BPU que aún no se han enviado a la IFU se pueden usar como búsquedas previas de instrucciones. Esta parte de la lógica es Implementado en FTQ, entregando directamente la caché de instrucciones. Envío de una solicitud de precarga.
+- FTQ agrega la mayor parte de la información del front-end, por lo que implementa muchos contadores de rendimiento que se pueden obtener durante la simulación. Para obtener más detalles, consulte el [código fuente](https://github.com/OpenXiangShan/XiangShan/blob/20bb5c4c094f06264df0e406d0df058f04ccc21c/ fuente/principal/scala/xiangshan/frontend/NewFtq.scala#L1024-L1206)
 
---8<-- "docs/frontend/abbreviations.md"
+--8<-- "docs/frontend/abreviaturas.md"
