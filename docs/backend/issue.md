@@ -1,34 +1,34 @@
-# 发射 Issue
+# Problema de lanzamiento
 
 
-在指令的发射阶段，涉及到的主要模块是保留站（或称为发射队列），在代码中为 `ReservationStation`，简称为 RS。指令在发射阶段涉及到的主要包括入队、选择、读数据、出队等操作，同时保留站还需要负责对指令写回的监听以及对等待指令的唤醒等操作。香山目前采用了发射前读寄存器堆的设计方案。
+En la etapa de emisión de instrucciones, el módulo principal involucrado es la estación de reserva (o cola de emisión), que en el código se denomina `ReservationStation`, abreviado como RS. Las instrucciones involucradas en la fase de emisión incluyen principalmente operaciones como poner en cola, seleccionar, leer datos y sacarlos de la cola. Al mismo tiempo, la estación de reserva también es responsable de monitorear la reescritura de instrucciones y reactivar las instrucciones en espera. Actualmente, Xiangshan adopta el diseño de leer la pila de registros antes del lanzamiento.
 
-## 主要模块与数据结构
+## Módulos principales y estructuras de datos
 
-保留站内的主要数据结构包括指令状态 `StatusArray`、指令存储 `PayloadArray` 和数据存储 `DataArray`。主要模块还包括选择逻辑 `SelectPolicy`，用来为入队指令分配空闲表项、选择就绪的指令进行发射。
+Las principales estructuras de datos en la estación de retención incluyen el estado de instrucción `StatusArray`, el almacenamiento de instrucciones `PayloadArray` y el almacenamiento de datos `DataArray`. El módulo principal también incluye la lógica de selección `SelectPolicy`, que se utiliza para asignar entradas de tabla libres para instrucciones en cola y seleccionar instrucciones listas para su emisión.
 
-## 入队
+## Únete al equipo
 
-指令的入队通过接口 `io.allocate` 完成，对应的项会在 T 周期被更新至 `StatusArray` 和 `PayloadArray`。寄存器堆的读数据会在 T + 1 周期到达，因此会在当拍被旁路（如果被选择的指令是前一拍入队的指令）或被存入 `DataArray`。根据指令的不同信息，`StatusArray` 中的状态会被相应更新。
+El comando se pone en cola a través de la interfaz `io.allocate` y los elementos correspondientes se actualizarán a `StatusArray` y `PayloadArray` en T ciclos. Los datos leídos del archivo de registro llegarán en el ciclo T + 1, por lo que se omitirán en el ciclo actual (si la instrucción seleccionada es la instrucción en cola en el ciclo anterior) o se almacenarán en `DataArray`. Dependiendo de la diferente información del comando, el estado en `StatusArray` se actualizará en consecuencia.
 
-## 选择
+## elegir
 
-在 T 周期，`StatusArray` 模块会输出当拍可被唤醒的指令，并输入给 `SelectPolicy` 模块，得到当拍被选择的就绪的指令。由于 AGE 算法的存在，当拍会选择 `IssueWidth + 1` 条指令，并在 T + 1 周期确定可供发射的指令。
+En el ciclo T, el módulo `StatusArray` generará las instrucciones que se pueden activar en el ritmo actual y las ingresará al módulo `SelectPolicy` para obtener las instrucciones listas que están seleccionadas en el ritmo actual. Debido a la existencia del algoritmo AGE, en este momento se seleccionarán las instrucciones `IssueWidth + 1` y las instrucciones disponibles para emisión se determinarán en el ciclo T + 1.
 
-## 读数据
+## Leer datos
 
-目前香山实现的是发射前读寄存器堆的设计，对于这样的设计，指令的操作数会在 RS 中多存储一份，且索引是对应指令在 RS 中的位置。`DataArray` 是一个异步读的设计，根据 RS 的位置读出对应的操作数。
+Actualmente, Xiangshan implementa un diseño que lee la pila de registros antes de emitir. Para este diseño, los operandos de la instrucción se almacenarán en RS una vez más y el índice es la posición de la instrucción correspondiente en RS. `DataArray` es un diseño de lectura asincrónica que lee los operandos correspondientes según la posición de RS.
 
-香山很容易被修改成发射后读寄存器堆的设计，在这种情况下，读数据的索引为对应的物理寄存器号。
+Xiangshan se puede modificar fácilmente a un diseño que lee el archivo de registro después del lanzamiento, en cuyo caso el índice de los datos leídos es el número de registro físico correspondiente.
 
-## 出队
+## Partida
 
-出队是保留站的最后一级流水。指令在 T0 被选择，T1 读数据，T2 会完成握手并出队，对应的接口是 `io.deq`。
+Dequeue es el último nivel de flujo en la estación de reserva. La instrucción se selecciona en T0, T1 lee los datos y T2 completa el protocolo de enlace y los retira de la cola. La interfaz correspondiente es `io.deq`.
 
-## 监听与唤醒
+## Monitoreo y activación
 
-保留站需要监听指令的写回信号（在发射前读寄存器堆的设计中，还需要监听指令写回的数据），并相应地保存保留站中指令所需要的操作数。`StatusArray` 模块负责对写回总线进行监听，并判断哪些指令的操作数与之匹配。匹配信号及指令的写回数据会被送到 `DataArray` 的端口上，并实现写回数据的捕获。
+La estación de reserva debe monitorear la señal de reescritura de la instrucción (en el diseño de lectura del archivo de registro antes de la emisión, también es necesario monitorear los datos reescritos por la instrucción) y guardar los operandos requeridos por la instrucción en el estación de reserva en consecuencia. El módulo `StatusArray` es responsable de monitorear el bus de escritura diferida y determinar qué instrucciones tienen operandos que coinciden con él. Los datos de escritura diferida de la señal y la instrucción coincidentes se enviarán al puerto de `DataArray`, y se capturarán los datos de escritura diferida.
 
-## 对浮点乘加指令的发射策略优化
+## Optimizar la estrategia de emisión de instrucciones de multiplicación-suma de punto flotante
 
-香山处理器的 FMA 单元支持乘加分离，可以同时处理浮点乘法和加法。因此，对于浮点乘加指令，我们在保留站实现了对他们的发射优化，当乘法的两个操作数就绪时，我们就允许指令进行发射，并将浮点乘法的中间结果写回保留站。当加法的第二个操作数就绪时，指令再次被发射，并完成全部运算。
+La unidad FMA del procesador Xiangshan admite la separación de multiplicación y suma y puede procesar multiplicación y suma de punto flotante simultáneamente. Por lo tanto, para las instrucciones de multiplicación-suma de punto flotante, implementamos la optimización de su emisión en la estación de reserva. Cuando los dos operandos de la multiplicación están listos, permitimos que se emita la instrucción y escribimos nuevamente el resultado intermedio de la multiplicación de punto flotante. A la estación de reserva. Cuando el segundo operando para la suma está listo, se emite nuevamente la instrucción y se completa toda la operación.
