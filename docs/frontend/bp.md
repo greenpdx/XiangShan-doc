@@ -1,151 +1,86 @@
-# 分支预测 (Branch Prediction)
-<figure markdown>
-  ![bpu](../figs/frontend/bpu.svg){ width="800" }
-  <figcaption>BPU 流水线示意图</figcaption>
-</figure>
+# Predicción de rama
+<figura rebajada>
+ ![bpu](../figs/frontend/bpu.svg){ ancho="800" }
+ <figcaption>Diagrama de canalización de BPU</figcaption>
+</figura>
 
-这一章描述香山处理器分支预测单元的整体架构，其预测流水线如上图所示。
+Este capítulo describe la arquitectura general de la unidad de predicción de la rama del procesador Xiangshan, cuyo proceso de predicción se muestra en la figura anterior.
 
-<!-- 南湖架构采取了一种分支预测和指令缓存解耦的取指架构，分支预测单元提供取指请求，写入一个队列，该队列将其发往取指单元，送入指令缓存。 -->
-分支预测单元采用一种多级混合预测的架构，其主要组成部分包括 [下一行预测器](#nlp)（Next Line Predictor，以下简称 NLP）和 [精确预测器](#apd)（Accurate Predictor，以下简称 APD）。其中，[NLP](#nlp) 是一个 [uBTB](#ubtb) (micro BTB)，[APD](#apd) 由 [FTB](#ftb)[^ftbcite]、[TAGE-SC](#tage-sc)、[ITTAGE](#ittage)、[RAS](#ras) 组成。NLP 提供无空泡的预测，在预测请求的下一拍就可以得到预测结果。APD 各组成部分的延迟在 2~3 拍之间。其中，FTB、TAGE、RAS 的延迟为 2 拍；SC、ITTAGE 的延迟为 3 拍。一次预测会经历三个流水级，每一个流水级都会产生新的预测内容。这些分布于不同流水级的预测器组成了一个[覆盖预测器](#overriding-predictor) (overriding predictor)。
+<!-- La arquitectura Nanhu adopta una arquitectura de búsqueda de instrucciones que desacopla la predicción de bifurcaciones y la memoria caché de instrucciones. La unidad de predicción de bifurcaciones proporciona solicitudes de búsqueda de instrucciones y las escribe en una cola, que las envía a la unidad de búsqueda de instrucciones y a la memoria caché de instrucciones. -->
+La unidad de predicción de rama adopta una arquitectura de predicción híbrida de múltiples niveles, cuyos componentes principales incluyen el [Predictor de siguiente línea](#nlp) (Predictor de siguiente línea, en adelante denominado NLP) y el [Predictor preciso](#apd) (Predictor preciso). Predictor, en adelante APD). Entre ellos, [NLP](#nlp) es un [uBTB](#ubtb) (micro BTB), [APD](#apd) se compone de [FTB](#ftb)[^ftbcite], [TAGE-SC ](# tage-sc), [TIEMPO](#ittage), [RAS](#ras). La PNL proporciona predicciones sin burbujas y los resultados de la predicción se pueden obtener en el siguiente latido de la solicitud de predicción. El retraso de cada componente del APD es de entre 2 y 3 latidos. Entre ellos, el retraso de FTB, TAGE y RAS es de 2 latidos; el retraso de SC e ITTAGE es de 3 latidos. Una predicción pasa por tres etapas de proceso y cada etapa genera nuevo contenido de predicción. Estos predictores distribuidos en diferentes etapas del proceso forman un [predictor primordial](#overriding-predictor) (predictor primordial).
 
-除了是否和取指单元解耦之外，南湖架构和上一代（雁栖湖）架构分支预测器的最大区别在于[预测块](#pred-block)的定义方式。南湖架构中，BTB 被替换成了 FTB (Fetch Target Buffer)，每一个 FTB 项都形成一个预测块，我们不仅对下一个块的起始地址做预测，同时也对当前块的结束点做预测。详见 [FTB](#ftb) 一节。
+Además de si está desacoplado de la unidad de búsqueda de instrucciones, la mayor diferencia entre el predictor de bifurcación de la arquitectura Nanhu y la arquitectura de la generación anterior (Yanqi Lake) es la definición del [bloque de predicción](#pred-block). En la arquitectura Nanhu, BTB se reemplaza por Fetch Target Buffer. Cada elemento FTB forma un bloque de predicción. No solo predecimos la dirección de inicio del siguiente bloque, sino que también predecimos el punto final del bloque actual. Consulte la sección [FTB](#ftb) para obtener más detalles.
 
-## 顶层模块 (BPU)
-BPU (Branch Prediction Unit) 是分支预测器的顶层模块，它包含覆盖预测逻辑和流水线握手逻辑，以及全局分支历史的管理。
+## Módulo de nivel superior (BPU)
+BPU (Unidad de predicción de sucursales) es el módulo de nivel superior del predictor de sucursales, que contiene la lógica de predicción de cobertura y la lógica de protocolo de enlace de canalización, así como la gestión del historial de sucursales global.
 
-### 握手逻辑
-BPU 的各个流水级都会连接 [FTQ](ftq.md)，一旦第一个预测流水级存在有效预测结果，或者后续预测流水级产生不同的预测结果，和 [FTQ](ftq.md) 的握手信号有效位都会置高。
+### Lógica del apretón de manos
+Cada etapa del pipeline de la BPU se conectará a [FTQ](ftq.md). Una vez que la primera etapa del pipeline de predicción tenga un resultado de predicción válido, o la etapa del pipeline de predicción posterior produzca un resultado de predicción diferente, se comunicará con [FTQ] (ftq.md) El bit válido de la señal se establecerá en alto.
 
-### 全局分支历史管理
-南湖架构实现了接近完全准确的[全局分支历史](#global-history)，这个性质由以下三点保证：
+### Gestión del historial de sucursales a nivel global
+La arquitectura de Southlake implementa un historial de sucursales global casi completamente preciso. Esta propiedad está garantizada por los siguientes tres puntos:
 
-- **推测更新**：每次预测都会根据[预测块](#pred-block)内的条件分支指令个数和预测方向计算新的全局历史，并在新的预测中使用
-- **覆盖逻辑中加入全局历史的比较**：一旦位于后面的流水级推测更新后全局历史与之前流水级的结果不同（条件分支个数或执行结果不同），同样会冲刷流水线并重新开始预测
-- **预测后存储全局历史的副本**：在预测结束后，当次预测使用的全局历史会存储到 [FTQ](ftq.md) 中，在误预测恢复时读出并送回 BPU
+- **Actualización especulativa**: cada predicción calculará un nuevo historial global basado en la cantidad de instrucciones de bifurcación condicional y la dirección prevista en el [bloque de predicción](#pred-block) y lo usará en la nueva predicción.
+- **Agregar comparación de historial global a la lógica de sobrescritura**: una vez que se actualiza el historial global de la etapa de canalización posterior y el resultado es diferente al de la etapa de canalización anterior (la cantidad de ramas condicionales o el resultado de la ejecución es diferente) , la tubería también se limpiará y reiniciará.
+- **Almacenar una copia del historial global después de la predicción**: una vez completada la predicción, el historial global utilizado en la predicción se almacenará en [FTQ](ftq.md), se leerá y se enviará de vuelta a la BPU. Cuando se recupera la predicción errónea
 
-之所以说“接近”完全准确，是因为 BPU 会忽略那些从未跳转的条件分支指令，它们不会被记录在 FTB 中，也就不会包含在分支历史里。
+La razón por la que digo "casi" es porque la BPU ignora las instrucciones de bifurcación condicional que nunca saltan. No se registran en el FTB y no se incluyen en el historial de bifurcaciones.
 
-## 下一行预测器 (NLP)
-下一行预测器旨在用较小的存储开销提供一个无空泡的快速预测流。它的功能主要由 [uBTB](#ubtb) 提供。对于给定的起始地址 PC，uBTB对从 PC 开始的一个[预测块](#pred-block)做出整体预测。
+## Predictor de la siguiente fila (PNL)
+El siguiente predictor de fila tiene como objetivo proporcionar un flujo de predicción rápido sin cavitación con una pequeña sobrecarga de almacenamiento. Su funcionalidad la proporciona principalmente [uBTB](#ubtb). Para una dirección de inicio PC dada, uBTB realiza una predicción general para un [bloque de predicción](#pred-block) a partir de PC.
 
-### uBTB
-它用分支历史和 PC 的低位异或索引存储表，从表中读出的内容直接提供了最精简的预测，包括下一个预测块的起始地址 `nextAddr`、这个预测块是否发生分支指令跳转 `taken`、（如果跳转）跳转指令相对起始地址的偏移 `cfiOffset`。另外还提供分支指令的相关信息以更新分支历史，包括是否在条件分支跳转 `takenOnBr`，以及块内包含分支指令的数目 `brNumOH`。
+###uBTB
+Utiliza el historial de ramificaciones y la tabla de almacenamiento de índices XOR de orden inferior de PC. El contenido leído de la tabla proporciona directamente la predicción más concisa, incluida la dirección de inicio del siguiente bloque de predicción "nextAddr", si este bloque de predicción tiene una ramificación salto de instrucción y si se produce el salto de instrucción de bifurcación. Se toma la instrucción de salto. Si se toma un salto, la instrucción de salto se desplaza desde la dirección de inicio mediante cfiOffset . Además, se proporciona información relevante sobre la instrucción de bifurcación para actualizar el historial de bifurcación, incluido si el salto de bifurcación condicional se realiza en Br y la cantidad de instrucciones de bifurcación en el bloque, brNumOH.
 
-我们摒弃了 tag 匹配的做法，这会带来一个问题。在有 tag 匹配的情况下，如果一个[预测块](#pred-block)没有命中，会将下一个预测块的 PC 置为当前 PC 加[预测宽度](#pred-width)。为避免浪费，如果在预测块中没有分支指令，则训练时不会写入 uBTB。在这个前提下，如果没有 tag 匹配机制，则很容易把没有分支指令（在 tag 匹配机制下不命中）的预测块预测为另一个跳转的块。针对这种情况，我们引入了另一种预测机制，对当前 PC 是否可能存在有效的分支指令进行预测。这个预测机制的存储结构由取指 PC 直接索引，它的查询结果表示了该取指 PC 是否被写入过。在它指示该 PC 没被写入过的时候，会把下一个 PC 预测为当前 PC 加预测宽度。
+Hemos abandonado la práctica de coincidencia de etiquetas, lo que trae un problema. En el caso de coincidencia de etiquetas, si un [bloque de predicción](#pred-block) no coincide, el PC del siguiente bloque de predicción se establecerá en el PC actual más el [ancho de predicción](#pred-width). Para evitar desperdicios, si no hay ninguna instrucción de bifurcación en el bloque de predicción, no se escribe ningún uBTB durante el entrenamiento. Bajo esta premisa, si no hay un mecanismo de coincidencia de etiquetas, es fácil predecir un bloque predicho sin instrucciones de bifurcación (que no impacta bajo el mecanismo de coincidencia de etiquetas) como otro bloque de salto. Para abordar esta situación, introdujimos otro mecanismo de predicción para predecir si puede haber una instrucción de bifurcación válida para la PC actual. La estructura de almacenamiento de este mecanismo de predicción está indexada directamente por la PC de obtención de instrucciones, y su resultado de consulta indica si se ha escrito la PC de obtención de instrucciones. Cuando indica que no se ha escrito el PC, se predice que el próximo PC será el PC actual más el ancho previsto.
 
-## 精确预测器 (APD)
-为提高总体预测准确率，减少预测错误带来的流水线冲刷，南湖架构实现了延迟更高，同时也更为精确的预测机制。
+## Predictor Preciso (APD)
+Para mejorar la precisión general de la predicción y reducir el vaciado de la tubería causado por errores de predicción, la arquitectura Nanhu implementa un mecanismo de predicción con mayor latencia y mayor precisión.
 
-精确预测器包括取指目标缓冲 [FTB](#ftb)、条件分支方向预测器 [TAGE-SC](#tage-sc)、间接跳转预测器 [ITTAGE](#ittage) 和返回地址栈 [RAS](#ras)。
-
-
-### FTB
-FTB 是 APD 的核心。APD 的其他预测部件所作出的预测全部依赖于 FTB 提供的信息。FTB 除了提供[预测块](#pred-block)内分支指令的信息之外，**还提供预测块的结束地址**。对于 FTB 来说，FTB 项的生成策略至关重要。南湖架构在原始论文[^ftbcite]的基础上，结合这篇论文[^ftbcitequalcomm]的思想形成了现有的策略，记 FTB 项的起始地址为 *`start`*，结束地址为 *`end`*，具体策略如下：
-
-- **FTB 项由 *`start`* 索引，*`start`* 在预测流水线中生成，实际上，*`start`* 基本遵循如下原则之一：**
-    - *`start`* 是上一个预测块的 *`end`*
-    - *`start`* 是来自 BPU 外部的重定向的目标地址；
-- **FTB项内最多记录两条分支指令，其中第一条一定是条件分支；**
-!!! note inline end "注意"
-    这种训练策略下，同一条分支指令可能存在于多个 FTB 项内。
-- ***end* 一定满足三种条件之一：**
-    - *`end`* - *`start`* = 预测宽度
-    - *`end`* 是从 *`start`* 开始的预测宽度范围内第三条分支指令的 PC
-    - *`end`* 是一条无条件跳转分支的下一条指令的 PC，同时它在从 *`start`* 开始的预测宽度范围内
+El predictor preciso incluye el búfer de destino de instrucción [FTB](#ftb), el predictor de dirección de rama condicional [TAGE-SC](#tage-sc), el predictor de salto indirecto [ITTAGE](#ittage) y la pila de dirección de retorno. [RAS](#ras).
 
 
-  
-和论文中的实现[^ftbcite]一样，我们只存储结束地址的低位，而高位用起始地址的高位拼接得到。和 AMD[^amd] 的做法相似，我们还对 [FTB](#ftb) 项中的条件分支指令记录“总是跳转”位，该位在第一次遇到该条件分支跳转时置 1，在它值为 1 的时候，该条件分支的方向总是预测为跳转，也不用它的结果训练条件分支方向预测器；当该条件分支遇到一次执行结果为不跳转的时候，将该位置 0，之后它的方向由条件分支方向预测器预测。
+Por favor, lea
+FTB es el núcleo de APD. Las predicciones realizadas por los demás componentes de predicción de APD se basan en la información proporcionada por FTB. Además de proporcionar información sobre las instrucciones de bifurcación dentro del [bloque de predicción](#pred-block), FTB también proporciona la dirección final del bloque de predicción. Para FTB, la estrategia de generación de artículos FTB es crucial. La arquitectura Nanhu se basa en el artículo original [^ftbcite] y combina las ideas de este artículo [^ftbcitequalcomm] para formar la estrategia actual. La dirección inicial del elemento FTB es *`start`* y la dirección final es *` fin `*, las estrategias específicas son las siguientes:
 
-### TAGE-SC
-TAGE-SC 是南湖架构条件分支的主预测器，它的大致逻辑继承自上一代雁栖湖架构的 TAGE-SC-L。目前的实现中，TAGE 的延迟是 2 拍，SC 的延迟是 3 拍。
-!!! note "为什么没有循环预测器？"
-    南湖架构去掉了循环预测器，这是因为在目前的架构下 FTB 项的定义方式会导致一条条件分支指令同时存在于多个 FTB 项内，这会为准确记录某一条循环分支指令的循环次数带来困难。而在雁栖湖架构中，对每一条指令都会做出预测，一条分支指令在 BTB 中只会出现一次，因此没有上述的问题。
-<figure markdown>
-  ![bpu](../figs/frontend/tage.png){ width="600px" }
-  <figcaption>TAGE 基本逻辑示意图</figcaption>
-</figure>
-TAGE 利用历史长度呈几何级数增加的多个预测表，可以挖掘极长的分支历史信息。它的基本逻辑如上图所示。它由一个基预测表和多个历史表组成，基预测表用 PC 索引，而历史表用 PC 和一定长度的分支历史折叠后的结果异或索引，不同历史表使用的分支历史长度呈几何级数关系。在预测时，还会用 PC 和每个历史表对应的分支历史的另一种折叠结果异或计算 tag，与表中读出的 tag 进行匹配，如果匹配成功则该表命中。最终的结果取决于命中的历史长度最长的预测表的结果。在南湖架构中，每次预测最多同时预测 2 条条件分支指令。在访问 TAGE 的各个历史表时，用预测块的起始地址作为 PC，同时取出两个预测结果，它们所用的分支历史也是相同的。
-!!! note "两条分支使用相同历史预测的原因"
-    理论上，每一条分支都应该使用最新的分支历史，因为一般意义上，在分支历史序列中离当前分支较近的位会有更大的概率影响当前分支的结果。对于第二条分支来说，最新的分支历史需要包含第一条分支的结果。在这里，两条条件分支的预测可以采用相同的分支历史是因为，如果需要第二条分支的跳转结果，那么第一条分支一定不跳转，所以对第二条分支来说最新的分支历史位一定是 0，这一点是确定的，所以并没有引入特别多的信息。测试结果也表明，对两者使用不同分支历史预测的准确率收益几乎可以忽略，却引入了复杂的逻辑。
-
-TAGE 还有一个[备选预测](#alt_pred)逻辑，我们参考 L-TAGE[^ltage] 的设计实现了 `USE_ALT_ON_NA` 寄存器，动态决定是否在最长历史匹配结果信心不足时使用备选预测。在实现中处于时序考虑，始终用基预测表的结果作为备选预测，这带来的准确率损失很小。
-
-TAGE 表项中包含一个 `useful` 域，它的值不为 0 表示该项是一个有用的项，便不会被训练时的分配算法当作空项分配出去。在训练时，我们用一个饱和计数器动态监测分配的成功/失败次数，当分配失败的次数足够多，计数器达到饱和时，我们把所有的 `useful` 域清零。
-
-SC 是统计校正器，当它认为 TAGE 有较大的概率误预测时，它会反转最终的预测结果。它的实现基本参考了 O-GEHL 预测器[^o_gehl]的结构，本质上是 perceptron 预测逻辑[^perceptron]的变体。
-
-!!! note "折叠历史"
-    TAGE 类预测器的每一个历史表都有一个特定的历史长度，为了与 PC 异或后进行历史表的索引，很长的分支历史序列需要被分成很多段，然后全部异或起来。每一段的长度一般等于历史表深度的对数。由于异或的次数一般较多，为了避免预测路径上多级异或的时延，我们会直接存储折叠后的历史。由于不同长度历史折叠方式不同，所需折叠历史的份数等于 (历史长度,折叠后长度) 元组去重后的个数。在更新一位历史时只需要把折叠前的最老的那一位和最新的一位异或到相应的位置，再做一个移位操作即可。
+- **Los elementos FTB se indexan mediante *`start`*, que se genera en el proceso de predicción. En la práctica, *`start`* sigue básicamente uno de los siguientes principios:**
+ - *`start`* es el *`end`* del bloque de predicción anterior
+ - *`start`* es la dirección de destino de las redirecciones desde fuera de la BPU;
+- **Se pueden registrar como máximo dos instrucciones de bifurcación en el elemento FTB, y la primera debe ser una bifurcación condicional;**
+!!! nota en línea final "Nota"
+ Bajo esta estrategia de entrenamiento, la misma instrucción de rama puede existir en múltiples entradas FTB.
+- ***fin* debe satisfacer una de las siguientes tres condiciones:**
+ - *`end`* - *`start`* = ancho previsto
+ - *`end`* es el PC de la tercera instrucción de rama en el rango de ancho de predicción que comienza desde *`start`*
+ - *`end`* es el PC de la siguiente instrucción de una rama incondicional, y está dentro del ancho de predicción de *`start`*
 
 
 
+Al igual que en la implementación del artículo [^ftbcite], solo almacenamos los bits bajos de la dirección final, y los bits altos se concatenan con los bits altos de la dirección inicial. De manera similar a AMD[^amd], también registramos el bit "saltar siempre" para las instrucciones de bifurcación condicional en los elementos [FTB](#ftb), que se establece la primera vez que se encuentra la bifurcación condicional. 1, cuando su valor es 1 , siempre se predice que la dirección de la rama condicional saltará, y su resultado no se usa para entrenar al predictor de dirección de la rama condicional; cuando la rama condicional encuentra un resultado de ejecución de no saltar, establezca este bit en 0, después de lo cual su dirección es predicho por el predictor de dirección de rama condicional.
 
-### ITTAGE
-RISC-V 指令集中 `jalr` 指令支持以寄存器取值加一立即数的方式指定无条件跳转指令目标地址。不同于在指令中直接编码跳转偏移量的 `jal` 指令，`jalr` 的跳转地址需要借助寄存器访问间接获取，因而被称为间接跳转指令。由于寄存器的值可变，于是相同 `jalr` 指令的跳转地址可能很多样，所以 FTB 记录固定地址的机制难于准确预测这种指令的目标地址。在香山处理器中，`jalr` 指令的预测机制体现为 FTB，RAS 与 ITTAGE 的协作。FTB 会记载 `jalr` 指令的最近一次跳转地址，部分 `jalr` 指令的跳转地址相对固定，仅靠 FTB 就足以达到很高的预测准确率；函数返回是 `jalr` 指令中较为常见的应用场景，它和函数调用指令有着显著的配对性，可以使用具有栈结构的 RAS 进行预测；不符合以上特征的 `jalr` 指令交由 ITTAGE 预测。
+### DÍA-SC
+TAGE-SC es el predictor principal de las ramas condicionales en la arquitectura Nanhu. Su lógica general se hereda de TAGE-SC-L de la arquitectura Yanqi Lake de la generación anterior. En la implementación actual, el retraso de TAGE es de 2 latidos y el retraso de SC es de 3 latidos.
+!!! nota "¿Por qué no hay un predictor de bucle?"
+ La arquitectura de Southlake elimina el predictor de bucle porque la forma en que se definen los elementos FTB en la arquitectura actual hará que exista una instrucción de bifurcación condicional en varios elementos FTB al mismo tiempo, lo que causará problemas para registrar con precisión la cantidad de bucles de una bifurcación de bucle. instrucción. Es difícil. En la arquitectura de Yanqi Lake, se realiza una predicción para cada instrucción y una instrucción de bifurcación solo aparece una vez en el BTB, por lo que no existe ese problema.
+<figura rebajada>
+ ![bpu](../figs/frontend/tage.png){ ancho="600px" }
+ <figcaption>Diagrama lógico básico de TAGE</figcaption>
+</figura>
+TAGE explota múltiples tablas de predicción con longitudes de historial que aumentan exponencialmente para extraer información del historial de ramas extremadamente largas. Su lógica básica se muestra en la figura anterior. Consiste en una tabla de predicción base y varias tablas de historial. La tabla de predicción base está indexada por PC, mientras que la tabla de historial está indexada por PC y el resultado de plegar una cierta longitud de historial de rama. La longitud del historial de rama utilizado por diferentes historiales Las tablas son geométricamente proporcionales. Relación numérica. Durante la predicción, la etiqueta se calcula mediante la operación XOR del PC y otro resultado de plegado del historial de la rama correspondiente a cada tabla de historial, y se combina con la etiqueta leída de la tabla. Si la coincidencia es exitosa, la tabla coincide. El resultado final depende del resultado de la tabla de predicción con el historial de aciertos más largo. En la arquitectura de Southlake, se pueden predecir como máximo 2 instrucciones de bifurcación condicional simultáneamente en cada predicción. Al acceder a cada tabla de historial de TAGE, la dirección de inicio del bloque de predicción se utiliza como PC, y se extraen dos resultados de predicción al mismo tiempo, y el historial de la rama que utilizan también es el mismo.
+!!! nota "Razón por la cual dos ramas utilizan la misma predicción histórica"
+ En teoría, cada rama debería utilizar el historial de ramas más reciente, porque en general, los bits más cercanos a la rama actual en la secuencia del historial de ramas tienen una mayor probabilidad de afectar el resultado de la rama actual. Para la segunda rama, el historial de la última rama debe contener los resultados de la primera rama. Aquí, la predicción de las dos ramas condicionales puede usar el mismo historial de ramas porque si se necesita el resultado del salto de la segunda rama, entonces la primera rama no debe saltar, por lo que la última rama para la segunda rama El bit de historial debe ser 0. Esto es seguro, por lo que no introduce mucha información. Los resultados de la prueba también muestran que la ganancia de precisión al utilizar diferentes predicciones del historial de ramas para los dos es casi insignificante, pero introduce una lógica compleja.
 
-![ittage_struct](../figs/frontend/ITTAGE.png)
+TAGE también tiene una lógica de [predicción alternativa](#alt_pred). Implementamos el registro `USE_ALT_ON_NA` basado en el diseño de L-TAGE[^ltage] para decidir dinámicamente si se debe utilizar la predicción alternativa cuando la confianza en la coincidencia histórica más larga El resultado es insuficiente. En la implementación, debido a consideraciones de tiempo, los resultados de la tabla de predicción base siempre se utilizan como predicciones alternativas, lo que produce poca pérdida de precisión.
 
-ITTAGE[^tage][^ittage_improve] 是一种准确率很高的间接跳转预测器，它的基本结构如上图所示。ITTAGE 在 TAGE 的主要区别在于，每个表项在 TAGE 表项的基础上加入了所预测的跳转地址。
+La entrada de la tabla TAGE contiene un campo "útil". Si su valor no es 0, significa que el elemento es útil y el algoritmo de asignación no lo asignará como elemento vacío durante el entrenamiento. Durante el entrenamiento, utilizamos un contador de saturación para monitorear dinámicamente la cantidad de asignaciones exitosas/fallidas. Cuando la cantidad de asignaciones fallidas es lo suficientemente alta y el contador alcanza la saturación, borramos todos los campos "útiles" y los ponemos a cero.
 
-<!-- ![ittage_entry](../figs/frontend/ITTAGE_entry.png){width="500"} -->
+SC es un corrector estadístico que revierte el resultado de la predicción final cuando cree que TAGE tiene una gran probabilidad de predicción errónea. Su implementación se basa en la estructura del predictor O-GEHL [^o_gehl] y es esencialmente una variante de la lógica de predicción del perceptrón [^perceptron].
 
-由于每个 FTB 项仅存储至多一条间接跳转指令信息，[ITTAGE](#ittage) 预测器每周期也最多预测一条间接跳转指令的目标地址。ITTAGE 和 TAGE 的内部逻辑基本相同，此处不再重复。
+!!! nota "Historial de pliegues"
+ Cada tabla de historial del predictor de clase TAGE tiene una longitud de historial específica. Para indexar la tabla de historial después de la operación XOR con el PC, es necesario dividir una secuencia de historial de ramificación muy larga en muchos segmentos y luego realizar la operación XOR en conjunto. La longitud de cada segmento es generalmente igual al logaritmo de la profundidad de la tabla histórica. Dado que la cantidad de XOR generalmente es grande, para evitar la demora de los XOR de múltiples niveles en la ruta de predicción, almacenamos directamente el historial plegado. Dado que los historiales de diferentes longitudes se pliegan de diferentes maneras, la cantidad de historiales plegados necesarios es igual a la cantidad de tuplas (longitud del historial, longitud plegada) después de la deduplicación. Al actualizar un bit del historial, solo es necesario realizar una operación XOR entre el bit más antiguo antes de plegar y el bit más nuevo en la posición correspondiente, y luego realizar una operación de desplazamiento.
 
-<!-- [ITTAGE](#ittage) 预测器具体到每个流水阶段的核心动作如下：
 
-**Stage 0**：接收 [FTB](#ftb) 项起始地址 start 和经折叠的分支历史，生成对应的 index 传入利用 SRAM 实现的预测表作为地址寻址
 
-**Stage 1**：获得由各 SRAM 预测表读出的表项数据，利用 Reg 暂存
 
-**Stage 2**：利用 [ITTAGE](#ittage) 表项数据根据历史长度自高到低选出至多2个命中结果并决策选出最终结果，生成 index、是否使用[备选预测](#alt_pred)等 meta 数据暂存到Reg
-
-**Stage 3**：将预测结果更新到 [FTB](#ftb) 项并将暂存的 meta 数据更新到 meta 通道，[ITTAGE](#ittage) 预测流程结束
-
-**Update Stage 0**：训练数据中包含间接误预测时，从 meta 数据中提取作出该预测时 index、是否使用[备选预测](#alt_pred)等信息，从训练数据中提取正确 target 等信息暂存到寄存器中
-
-**Update Stage 1**：利用暂存的更新信息生成 SRAM 预测表项更新信号
-
-**Update Stage 2**：预测表项完成更新 -->
-
-### RAS
-RAS 是一个寄存器堆实现的栈存储结构，它对 `call` 指令的下一条指令的地址进行记录，在 [FTB](#ftb) 认为预测块会在 `call` 指令跳转时压栈，并在 [FTB](#ftb) 认为预测块在 `ret` 指令跳转时弹出。每一项包含一个地址和一个计数器，当重复压栈同一个地址时，栈指针不变，计数器加一，用于处理程序中递归调用的情况。每次预测后，栈顶项和栈指针都会存入 [FTQ](ftq.md) 的存储结构，用于误预测时恢复。
-
-<h2 id=predictor-update>预测器的训练</h2>
-总的来说，为防止错误执行路径对预测器内容的污染，各部分预测器在[预测块](#pred-block)的所有指令提交后进行训练。它们的训练内容来自自身的预测信息和[预测块](#pred-block)中指令的译码结果和执行结果，它们会被从 [FTQ](ftq.md) 中读出，并送回 [BPU](#bpu)。其中，自身的预测信息会在预测后打包传进 [FTQ](ftq.md) 中存储；指令的译码结果来自 IFU 的预译码模块，在取到指令后写回 [FTQ](ftq.md)；而执行结果来自各个执行单元。
-
-在 [BPU](#bpu) 收到来自其外部的重定向请求时，会把曾进行过推测更新的元素（[全局历史](#global-history)、[RAS](#ras) 栈顶项等）进行恢复。
-
-## 名词解释
-
-<b id="pred-block">预测块</b> 分支预测单元 (BPU) 每次给取指目标队列 (FTQ) 的请求基本单位，它描述了一个取指请求的范围，以及其中分支指令的情况
-
-<b id="pred-width">预测宽度</b> 每次预测提供给取指单元的最大指令流宽度，在南湖架构中与取指宽度相同，都为 32 字节。当 FTB 预测未命中时，目标地址默认为当前地址和预测宽度相加
-
-<b id="overriding-predictor">覆盖预测器</b> 一种多个不同延迟的预测器的组织形式，延迟大的、相对更准确的预测器被放在后面的流水级，其产生的预测结果会与前面的预测器进行比较，如果不同则会冲刷流水线，整体预测结果以最准确的预测器为准
-
-<b id="global-history">全局分支历史</b> 指令流中所有条件分支指令的执行结果序列，每一条分支指令的执行结果作为一位（0/1）存在于全局分支历史中，一般以移位寄存器的方式实现
-
-<b id="alt_pred">备选预测</b> TAGE 类预测器一种优化，当对长历史预测结果信心不足时选择次长历史下的命中结果作为最终预测，可提升整体预测正确率
-
-## 引用
-[^ftbcite]: Reinman G, Austin T, Calder B. A scalable front-end architecture for fast instruction delivery[J]. ACM SIGARCH Computer Architecture News, 1999, 27(2): 234-245.
-
-[^ftbcitequalcomm]: Perais A, Sheikh R, Yen L, et al. Elastic instruction fetching[C]//2019 IEEE International Symposium on High Performance Computer Architecture (HPCA). IEEE, 2019: 478-490.
-
-[^amd]: Software Optimization Guide for AMD Family 19h Processors (PUB), Chap. 2.8.1.5, [https://www.amd.com/system/files/TechDocs/56665.zip](https://www.amd.com/system/files/TechDocs/56665.zip)
-
-[^tage]: Seznec A, Michaud P. A case for (partially) TAgged GEometric history length branch prediction[J]. The Journal of Instruction-Level Parallelism, 2006, 8: 23.
-
-[^ltage]: Seznec A. A 256 kbits l-tage branch predictor[J]. Journal of Instruction-Level Parallelism (JILP) Special Issue: The Second Championship Branch Prediction Competition (CBP-2), 2007, 9: 1-6.
-
-[^tage_sc]: Seznec A. A new case for the tage branch predictor[C]//Proceedings of the 44th Annual IEEE/ACM International Symposium on Microarchitecture. 2011: 117-127.
-
-[^o_gehl]: Seznec A. The O-GEHL branch predictor[J]. The 1st JILP Championship Branch Prediction Competition (CBP-1), 2004.
-
-[^perceptron]: Jiménez D A, Lin C. Dynamic branch prediction with perceptrons[C]//Proceedings HPCA Seventh International Symposium on High-Performance Computer Architecture. IEEE, 2001: 197-206.
-
-[^ittage_improve]: Seznec A. A 64-Kbytes ITTAGE indirect branch predictor[C]//JWAC-2: Championship Branch Prediction. 2011.
-
---8<-- "docs/frontend/abbreviations.md"
+### ITALIA
+La instrucción `jalr` en el conjunto de instrucciones RISC-V permite especificar la dirección de destino de una instrucción de salto incondicional agregando un valor inmediato a un valor de registro. A diferencia de la instrucción `jal`, que codifica directamente el desplazamiento de salto en la instrucción, la dirección de salto de `jalr` debe obtenerse indirectamente a través del acceso al registro, por lo que se denomina instrucción de salto indirecto. Dado que el valor del registro es variable, la dirección de salto de la misma instrucción `jalr` puede ser muy diferente, por lo que el mecanismo FTB de registro de direcciones fijas hace difícil predecir con precisión la dirección de destino de dichas instrucciones. En el procesador Xiangshan, la instrucción `jalr`
