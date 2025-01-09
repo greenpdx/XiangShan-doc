@@ -1,22 +1,22 @@
-# 整数部件
+# Componentes enteros
 
-## ALU
+ALU
 
-香山的 ALU 支持加减、逻辑、分支、部分位扩展等指令。
+La ALU de Xiangshan admite instrucciones como suma, resta, lógica, ramificación y extensión parcial de bits.
 
-## MUL
+##MUL
 
-香山的乘法器默认为3级流水线的华莱士树乘法器，也可通过配置修改为直接由`*`实现的乘法器，再
-通过register retiming来优化时序。
+El multiplicador predeterminado de Xiangshan es un multiplicador de árbol de Wallace en cadena de 3 etapas, que también se puede cambiar a un multiplicador implementado directamente por `*` a través de la configuración.
+Optimice la sincronización mediante la resincronización del registro.
 
-## DIV
+##División
 
-香山使用了 SRT16 定点除法器[^1]，每周期运算4位，除法循环前后处理各两拍。
+Xiangshan utiliza el divisor de punto fijo SRT16[^1], que opera 4 bits por ciclo y procesa dos pasos antes y después del ciclo de división.
 
-## MISC: CSR/JUMP
+## MISC: RSE/SALTAR
 
-香山的 CSR 实现支持 riscv-priv-1.12 版本规范。
+La implementación de CSR de Xiangshan admite la especificación de la versión riscv-priv-1.12.
 
-由于 JUMP 指令的特殊操作数需求，我们在 MISC 单元中实现了 JUMP 指令的操作。
+Debido a los requisitos especiales de operandos de la instrucción JUMP, implementamos la operación de la instrucción JUMP en la unidad MISC.
 
-[^1]: E. Antelo, T. Lang, P. Montuschi and A. Nannarelli, "Digit-recurrence dividers with reduced logical depth", IEEE Trans. Comput., vol. 54, no. 7, pp. 837-851, Jul. 2005.
+[^1]: E. Antelo, T. Lang, P. Montuschi y A. Nannarelli, "Divisores de recurrencia de dígitos con profundidad lógica reducida", IEEE Trans. Comput., vol. 54, núm. 7, págs. 837- 851, julio de 2005.
