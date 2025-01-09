@@ -1,20 +1,18 @@
-# 前端架构文档
-这一章描述香山处理器前端（Frontend）的整体架构。前端的模块关系和数据通路由下图所示：
+# Front-end architecture document
+This chapter describes the overall architecture of the Xiangshan processor front-end. The module relationship and data path of the front-end are shown in the figure below:
 
 ![frontend](../figs/frontend/frontend.png)
 
+The Nanhu architecture adopts an instruction fetch architecture that decouples branch prediction and instruction cache. The branch prediction unit provides instruction fetch requests and writes them into a queue, which sends them to the instruction fetch unit and into the instruction cache.
+The fetched instruction code is pre-decoded to preliminarily check the branch prediction errors and flush the prediction pipeline in time. The checked instructions are sent to the instruction buffer and passed to the decoding module, finally forming the back-end instruction supply.
 
+This chapter includes the following parts:
 
-南湖架构采取了一种分支预测和指令缓存解耦的取指架构，分支预测单元提供取指请求，写入一个队列，该队列将其发往取指单元，送入指令缓存。
-取出的指令码通过预译码初步检查分支预测的错误并及时冲刷预测流水线，检查后的指令送入指令缓冲并传给译码模块，最终形成后端的指令供给。
+* [Branch prediction](bp.md)
+* [Instruction target queue](ftq.md)
+* [Instruction fetch unit](ifu.md)
+* [Instruction cache](icache.md)
+* [Decode unit](decode.md)
 
-这一章包括以下几个部分：
-
-* [分支预测](bp.md)
-* [取指目标队列](ftq.md)
-* [取指令单元](ifu.md)
-* [指令缓存](icache.md)
-* [译码单元](decode.md)
-
-!!! note "关于缩写"
-    一些名词会在文档中以缩写形式出现（它们下方会有一个下划线），将鼠标停留在上面就可以看到缩写的全称。
+!!! note "About abbreviations"
+Some terms will appear in the document in abbreviated form (there will be an underline below them). You can see the full name of the abbreviation by hovering the mouse over it.
