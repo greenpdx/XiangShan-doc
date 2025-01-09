@@ -1,71 +1,71 @@
-# 指令缓存（Instruction Cache）文档
-<!-- 这个图需要重新画一下 -->
+# Documentación de la caché de instrucciones
+<!-- Esta imagen necesita ser redibujada -->
 ![icache](../figs/frontend/ICache.png)
 
-这一章描述香山处理器指令缓存的实现。
+Este capítulo describe la implementación de la caché de instrucciones del procesador Xiangshan.
 
-## 指令缓存配置
-| 参数名称               | 参数描述                              |
-| -----------           | ------------------------------------ |
-| `nSet`                | 指令缓存 Set 数，默认为 256            |
-| `nWays`               | 指令缓存每个 Set 的组相连路数，默认为 8 路 |
-| `nTLBEntries`         | ITLB 的项数，默认为 40 项(32普通页 + 8项大页) |
-| `tagECC`              | Meta SRAM 的校验方式，南湖版本配置为奇偶校验 |
-| `dataECC`             | Data SRAM 的校验方式，南湖版本配置为奇偶校验 |
-| `replacer`            | 替换策略，默认为随机替换，南湖版本配置为 PLRU |
-| `hasPrefetch`         | 指令预取开关，默认为关闭 |
-| `nPrefetchEntries`    | 指令预取的 entry 数目，同时可支持的最大 cache line 预取数，默认为4 |
-
-
-## 控制逻辑
-<!-- 指令缓存的主控制逻辑模块 MainPipe 的内部逻辑示意图： -->
-
-指令缓存的主控制逻辑模块 MainPipe 由 3 级流水线构成：
-
-- 在 `s0` 阶段从 FTQ 发送过包含两个 cache line 的取指令请求，其中包含了每个请求是否有效的信号（不跨行的指令 packet 止只会发送一个 cache line 的读请求），同时 MainPipe 一方面会把请求地址提取为缓存组索引（set index）发送给指令 Cache 的 [存储部分](#imem)，另一方面，这些请求会被发送给 ITLB 进行 [指令地址翻译](#itlb)
-- 在 `s1` 阶段，存储 SRAM 返回一个组（cache set）一共 N 个路 (cache way) 的 cache line 元数据和数据。同时 ITLB 返回请求对应的物理地址。接下来主控制逻辑截取物理地址并和 N 个路的 Cache tag 进行匹配，生成缓存命中（cache hit）和缓存缺失（cache miss）两种结果。另外还会根据替换算法的状态信息选出需要替换的 cache line。
-- 在 `s2` 阶段，hit 的请求直接返回数据给 IFU。而当发生 miss 的时候需要暂停流水线，并将请求发送给缺失处理单元 MissUnit。等到 MissUnit 充填完成并返回数据之后将数据返回给 IFU。这个阶段还会把 ITLB 翻译得到的物理地址发送给 PMP 模块进行访问权限的查询，如果权限错误会触发指令访问例外 (Instruction Access Fault)
-
-<h2 id=itlb> 指令地址翻译 </h2>
-
-由于指令缓存采用的是 VIPT（Virtual Index Physical Tag）的缓存方式，因此需要在地址 tag 比较之前先将虚拟地址翻译为物理地址。控制流水线的 `s0` 阶段，两个 cachline 请求的虚拟地址会同时发送到 ITLB 的查询端口，同时这一个时钟周期内 ITLB 返回虚地址是否命中的信号。命中则会在下一拍返回对应的物理地址。不命中则控制逻辑会阻塞 MainPipe 流水线，等待直到 ITLB 重填结束返回物理地址。
-
-## 缓存 miss 处理
-
-发生 miss 的请求会被移交给 MissUnit 向下游 L2 Cache 发送 Tilelink `Aquire` 请求，等到 MissUnit 收到对应数据的 `Grant` 请求之后，如果需要替换 cache line，MissUnit 则会向 ReplacePipe 发送 Release 请求，ReplacePipe 会重新读一遍 SRAM 得到数据，然后发送给 ReleaseUnit 发起向 L2 Cache 的 `Release` 请求。最后 MissUnit 重填写 SRAM，等到重填结束后返回数据给 MainPipe，MainPipe 再把数据返回给 IFU。
-
-miss 的 cache line 可能发生在两个请求中的任何一个，因此 MissUnit 里设置了两个处理 miss 的 missEntry 项来提高并发度。
-
-## 例外的处理
-在 ICache 产生的例外主要包括两种：ITLB 报告的指令缺页例外（Instruction Page Fault）和 ITLB 和 PMP 报告的访问例外（Access Fault）。MainPipe 会把例外信息直接报告给 IFU，而请求的数据被视为无效。
-
-<h2 id=imem> 存储部分 </h2>
-
-指令 Cache 的存储逻辑主要分为了 Meta SRAM（存储每个 cache line 的 tag 以及一致性状态）和 Data SRAM（存储每个 cache line 的内容）。内部支持了奇偶校验码用以进行数据的校验，当校验发生错误的时候会给报总线错误并产生中断。Meta/Data SRAM 内部都分了奇偶 bank，虚地址空间中相邻的两个 cache line 会被分别划分到不同的 bank 来实现一次两个 cache line 的读取。
+## Configuración de caché de instrucciones
+| Nombre del parámetro | Descripción del parámetro |
+| ------------ | ------------------------------------ |
+| `nSet` | Número de conjuntos de caché de instrucciones, el valor predeterminado es 256 |
+| `nWays` | La cantidad de formas en que cada conjunto en la caché de instrucciones puede conectarse. El valor predeterminado es 8. |
+| `nTLBEntries` | El número de entradas en ITLB, el valor predeterminado es 40 entradas (32 páginas normales + 8 páginas grandes) |
+| `tagECC` | Método de verificación Meta SRAM, la versión de Nanhu está configurada como verificación de paridad |
+| `dataECC` | Método de verificación de SRAM de datos, la versión de Nanhu está configurada como verificación de paridad |
+| `replacer` | Estrategia de reemplazo, el valor predeterminado es el reemplazo aleatorio, la versión de Nanhu está configurada como PLRU |
+| `hasPrefetch` | Interruptor de precarga de instrucciones, el valor predeterminado es desactivado |
+| `nPrefetchEntries` | La cantidad de entradas para la precarga de instrucciones y la cantidad máxima de precargas de líneas de caché que se pueden admitir al mismo tiempo. El valor predeterminado es 4 |
 
 
-## 一致性支持
+## Lógica de control
+<!-- Diagrama lógico interno del módulo de lógica de control principal MainPipe de la caché de instrucciones: -->
 
-香山南湖架构的指令 Cache 实现了 Tilelink 定义的一致性协议。主要是通过增加了一条额外的流水线 ReplacePipe 来处理 Tilelink `Probe` 和 `Release` 请求。
+El módulo de lógica de control principal MainPipe de la caché de instrucciones consta de una tubería de 3 etapas:
+
+- En la fase `s0`, se envía una solicitud de búsqueda que contiene dos líneas de caché desde FTQ, que contiene una señal sobre si cada solicitud es válida (los paquetes de instrucciones que no cruzan líneas solo enviarán una solicitud de lectura para una línea de caché). Al mismo tiempo, MainPipe extrae la dirección de la solicitud como un índice de conjunto de caché y la envía a la [parte de almacenamiento](#imem) de la caché de instrucciones. Por otro lado, estas solicitudes se envían a ITLB para [traducción de la dirección de la instrucción](#itlb)
+- En la fase `s1`, la SRAM de almacenamiento devuelve los metadatos de la línea de caché y los datos de un conjunto de caché con un total de N vías de caché. Al mismo tiempo, ITLB devuelve la dirección física correspondiente a la solicitud. A continuación, la lógica de control principal intercepta la dirección física y la compara con las etiquetas de caché de N vías, generando dos resultados: acierto de caché y error de caché. Además, la línea de caché que debe reemplazarse se seleccionará en función de la información de estado del algoritmo de reemplazo.
+- En la fase `s2`, la solicitud de visita devuelve los datos directamente a la IFU. Cuando ocurre un error, es necesario pausar el proceso y enviar la solicitud a la unidad de procesamiento faltante (MissUnit). Espere hasta que MissUnit se complete y devuelva los datos antes de devolver los datos a IFU. En esta etapa, la dirección física traducida por ITLB se envía al módulo PMP para la consulta de permisos de acceso. Si el permiso es incorrecto, se activará una excepción de acceso a instrucciones (Instruction Access Fault).
+
+<h2 id=itlb> Traducción de direcciones de instrucciones </h2>
+
+Dado que la caché de instrucciones utiliza el método de caché VIPT (etiqueta física de índice virtual), la dirección virtual debe traducirse a una dirección física antes de comparar la etiqueta de dirección. En la etapa `s0` de la tubería de control, las direcciones virtuales de las dos solicitudes de línea de caché se envían al puerto de consulta del ITLB al mismo tiempo, y el ITLB devuelve una señal que indica si la dirección virtual llega dentro de este ciclo de reloj. Si se produce un impacto, la dirección física correspondiente se devolverá en el siguiente tiempo. Si ocurre un error, la lógica de control bloqueará la tubería MainPipe y esperará hasta que se vuelva a llenar el ITLB y se devuelva la dirección física.
+
+## Manejo de errores de caché
+
+La solicitud que no se complete se enviará a MissUnit para que envíe una solicitud de adquisición de Tilelink a la caché L2 descendente. Después de que MissUnit reciba la solicitud de concesión para los datos correspondientes, si es necesario reemplazar la línea de caché, MissUnit enviará una solicitud de adquisición de Tilelink a la caché L2 descendente. Solicite a ReplacePipe, y ReplacePipe volverá a leer la SRAM para obtener los datos y luego los enviará a ReleaseUnit para iniciar una solicitud de "Liberación" a la caché L2. Por último, MissUnit rellena la SRAM y devuelve los datos a MainPipe una vez finalizada la recarga. A continuación, MainPipe devuelve los datos a IFU.
+
+Puede ocurrir un error en la línea de caché en cualquiera de las dos solicitudes, por lo que se configuran dos elementos missEntry en MissUnit para manejar los errores y mejorar la simultaneidad.
+
+## Manejo de excepciones
+Hay dos tipos principales de excepciones generadas en ICache: Error de página de instrucciones informado por ITLB y Error de acceso informado por ITLB y PMP. MainPipe informa la excepción directamente a la IFU y los datos solicitados se consideran inválidos.
+
+<h2 id=imem>Sección de almacenamiento</h2>
+
+La lógica de almacenamiento de la caché de instrucciones se divide principalmente en Meta SRAM (que almacena la etiqueta y el estado de consistencia de cada línea de caché) y Data SRAM (que almacena el contenido de cada línea de caché). El código de verificación de paridad se admite internamente para la verificación de datos. Cuando se produce un error de verificación, se informará un error de bus y se generará una interrupción. La SRAM de metadatos se divide en bancos de paridad. Dos líneas de caché adyacentes en el espacio de direcciones virtuales se dividirán en bancos diferentes para implementar la lectura de dos líneas de caché a la vez.
 
 
-指令缓存的 ReplacePipe 由 4 级流水线构成：
+## Soporte de consistencia
 
-- 在 `r0` 阶段接收从 ProbeUnit 发送过来的 `Probe` 请求和从 MissUnit 发送过来的 `Release` 请求，同时也会发起对 Meta/Data SRAM 的读取。因为这里的请求包含了虚拟地址和实际的物理地址，所以不需要做地址翻译。
-- 在 `r1` 阶段，ReplacePipe 和 MainPipe 一样用物理地址对 SRAM 返回的一个 Set 的 N 路 cache line 做地址匹配，产生 hit 和 miss 两种信号，这个信号仅仅对于 `Probe` 有效，因为 `Release` 的请求一定在指令缓存里。
-- 在 `r2` 阶段，hit 的 `Probe` 请求将修改对应缓存块的权限，同时会把这个请求发送给 ReleaseUnit 向 L2 发送 `ProbrResponse` 请求。这个 cache line 的权限根据原来的权限（T/B）和Probe的权限转化（toN, toB, toT）来产生新的权限。miss 的请求不会做权限更改，并且会发送给 ReleaseUnit 向 L2 报告权限转变为 NToN（指令缓存里没有 `Probe` 要求的数据）。`Release` 请求也会被发送到 ReleaseUnit 向 L2 发送 `ReleaseData`。且只有 `Release` 请求被允许进入 `r3`
-- 在 `r3` 阶段，ReplacePipe 向 MissUnit 报告被替换出去的块已经往下 `Release` 了，通知 MissUnit 可以进行重填。
+El caché de instrucciones de la arquitectura Xiangshan Nanhu implementa el protocolo de consistencia definido por Tilelink. Básicamente, se agrega una tubería adicional, ReplacePipe, para manejar las solicitudes `Probe` y `Release` de Tilelink.
 
 
-## 指令预取
+El ReplacePipe de la caché de instrucciones consta de una tubería de 4 etapas:
 
-香山南湖架构实现了简单的`Fetch Directed Prefetching (FDP)`[^fdp],即让分支预测来指导指令预取，为此加入了指令预取器`IPrefetch`。具体的预取机制如下： 
+- En la fase `r0`, recibe la solicitud `Probe` enviada desde ProbeUnit y la solicitud `Release` enviada desde MissUnit, y también inicia una lectura de la SRAM Meta/Data. Dado que la solicitud aquí contiene la dirección virtual y la dirección física real, no se requiere traducción de dirección.
+- En la fase `r1`, ReplacePipe, al igual que MainPipe, utiliza la dirección física para hacer coincidir la dirección de la línea de caché N-way de un Set devuelto por SRAM, generando señales de aciertos y errores. Esta señal solo es válida para `Probe` , porque `Release` La solicitud debe estar en la caché de instrucciones.
+- En la fase `r2`, la solicitud `Probe` de impacto modificará los permisos del bloque de caché correspondiente y, al mismo tiempo, enviará esta solicitud a la ReleaseUnit para enviar una solicitud `ProbrResponse` a L2. Los permisos de esta línea de caché se generan en función de los permisos originales (T/B) y la conversión de permisos de la sonda (toN, toB, toT). Las solicitudes fallidas no realizarán cambios de permiso y se enviarán a ReleaseUnit para informar a L2 que el permiso ha cambiado a NToN (no hay datos solicitados por `Probe` en el caché de instrucciones). También se envía una solicitud 'Release' a ReleaseUnit para enviar 'ReleaseData' a L2. Y solo las solicitudes de `Liberación` pueden ingresar a `r3`
+- En la fase `r3`, ReplacePipe informa a MissUnit que el bloque reemplazado ha sido ``liberado`` hacia abajo, notificando a MissUnit que puede rellenarse.
 
-* 取指目标队列中加入了一个预取指针，指针的位置在预测指针和取指令指针中间，预取指针读取当前指令packet的目标地址（如果跳转则为跳转目标，不跳转为顺序的下一个packet的起始地址），发送给预取器。
-* 取器会完成地址翻译并访问指令缓存的Meta SRAM，如果发现该地址已经在指令缓存中，则当此预取请求被取消。如果不再则向`PrefetchEntry`申请分配一项，向`L2`缓存发送Tilelink `Hint`请求，把相应的缓存行预取到L2。
-* 为了保证不重复向L2发送预取请求，预取器里记录了已发送的预取请求物理地址，任何请求在申请`PrefetchEntry`之前都会去查这个记录，如果发现和已发送的预取请求相同就会把当前预取请求取消掉。
 
-## 引用
-[^fdp]: Reinman G, Calder B, Austin T. Fetch directed instruction prefetching[C]//MICRO-32. Proceedings of the 32nd Annual ACM/IEEE International Symposium on Microarchitecture. IEEE, 1999: 16-27.
+## Precarga de instrucciones
 
---8<-- "docs/frontend/abbreviations.md"
+La arquitectura Xiangshan Nanhu implementa un `Fetch Directed Prefetching (FDP)`[^fdp] simple, que permite la predicción de bifurcaciones para guiar la precarga de instrucciones. Para este propósito, se agrega un precargador de instrucciones `IPrefetch`. El mecanismo de precarga específico es el siguiente:
+
+* Se agrega un puntero de precarga a la cola de destino de búsqueda de instrucciones. El puntero se ubica entre el puntero de predicción y el puntero de búsqueda de instrucciones. El puntero de precarga lee la dirección de destino del paquete de instrucciones actual (el destino de salto si se salta, el destino de salto si se salta). no salta). La dirección de inicio del siguiente paquete en secuencia) se envía al prefetcher.
+* El buscador completa la traducción de la dirección y accede a la Meta SRAM de la caché de instrucciones. Si descubre que la dirección ya está en la caché de instrucciones, se cancela la solicitud de búsqueda previa. En caso contrario, solicite a `PrefetchEntry` que asigne un elemento, envíe una solicitud `Hint` de Tilelink al caché `L2` y obtenga previamente la línea de caché correspondiente en L2.
+* Para garantizar que las solicitudes de prefetch no se envíen repetidamente a L2, el prefetcher registra las direcciones físicas de las solicitudes de prefetch que se han enviado. Cualquier solicitud comprobará este registro antes de solicitar `PrefetchEntry`. Si encuentra una solicitud de prefetch que ha se ha enviado, si es el mismo, la solicitud de prefetch actual se cancelará.
+
+## Referencias
+[^fdp]: Reinman G, Calder B, Austin T. Búsqueda previa de instrucciones dirigidas por Fetch[C]//MICRO-32. Actas del 32.º Simposio internacional anual ACM/IEEE sobre microarquitectura. IEEE, 1999: 16-27.
+
+--8<-- "docs/frontend/abreviaturas.md"
