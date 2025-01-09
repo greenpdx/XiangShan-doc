@@ -1,23 +1,23 @@
-# 重定序缓冲 Re-Order Buffer (ROB)
+# Re-Order Buffer (ROB)
 
-在乱序处理器中，ROB 的作用是给指令定序，使得程序正常执行的结果能够被保留下来。按照一条指令的执行流程，ROB 会依次影响指令的派遣、写回、提交流程，同时指令还可能在任何时刻被冲刷。
+In an out-of-order processor, the role of ROB is to order instructions so that the results of normal program execution can be preserved. According to the execution process of an instruction, ROB will affect the dispatch, writeback, and submission process of the instruction in sequence, and the instruction may be flushed at any time.
 
-## 派遣
+## Dispatch
 
-在 Dispatch 阶段，指令会被分配一个 ROB 的表项，并将一些需要保存的信息 `RobCommitInfo` 存入 ROB 中，如指令的重命名信息、类型信息、对应 ftq 指针等。ROB 入队的宽度与重命名的宽度保持一致。
+In the Dispatch stage, the instruction will be assigned a ROB table entry, and some information to be saved `RobCommitInfo` will be stored in the ROB, such as the instruction renaming information, type information, corresponding ftq pointer, etc. The width of the ROB queue is consistent with the width of the renaming.
 
-在指令进入 ROB 之后，一些状态位会被更新，如 `valid`, `writebacked`, `interrupt_safe`（出于简化设计的考虑，目前访存指令是否是 MMIO 的信息不会传递到 ROB，他们会在提交前发生访存，因此目前我们简化设计避免访存指令触发中断）等。
+After the instruction enters the ROB, some status bits will be updated, such as `valid`, `writebacked`, `interrupt_safe` (for the sake of simplifying the design, the information of whether the memory access instruction is MMIO will not be passed to the ROB. They will access the memory before submission, so we currently simplify the design to avoid memory access instructions triggering interrupts), etc.
 
-## 写回
+## Writeback
 
-指令完成执行后，会通知 ROB 对应的运算操作已经完成，并由 ROB 将 `writebacked` 标志位置为 `true`。
+After the instruction is executed, the ROB will be notified that the corresponding operation has been completed, and the ROB will set the `writebacked` flag to `true`.
 
-## 提交
+## Submit
 
-在每一个时钟周期中，ROB 会依次检查队头的指令是否能够正常提交，并尽量多地将可以提交的指令通过 `io.commits` 接口进行提交。
+In each clock cycle, the ROB will check whether the instructions at the head of the queue can be submitted normally, and submit as many instructions as possible through the `io.commits` interface.
 
-针对有异常的指令，它们的提交会被阻塞，并通过 `io.exception` 接口向外发出异常信息。
+For instructions with exceptions, their submission will be blocked, and exception information will be sent out through the `io.exception` interface.
 
-## 取消与回滚
+## Cancel and rollback
 
-在指令的执行过程中，如果出现分支预测错误、访存违例等情况，该指令及更之后的指令可能会需要被冲刷。在这种情况下，ROB 会通过 `io.redirect` 端口收到取消信息，并根据取消信息来判断哪一部分指令需要被取消。对于被取消掉的指令，ROB 会利用回滚的机制，通过 `io.commits` 端口恢复重命名等信息，此时 `io.commits.isWalk` 会被置为 `true`。
+During the execution of an instruction, if branch prediction errors, memory access violations, etc. occur, the instruction and subsequent instructions may need to be flushed. In this case, the ROB will receive cancellation information through the `io.redirect` port, and determine which part of the instructions need to be canceled based on the cancellation information. For canceled instructions, ROB will use the rollback mechanism to restore renaming and other information through the `io.commits` port. At this time, `io.commits.isWalk` will be set to `true`.
