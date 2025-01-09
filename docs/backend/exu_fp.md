@@ -1,6 +1,6 @@
-# 浮点部件简介
+# Introduction to floating-point components
 
-香山南湖版本使用的浮点部件在[fudian](https://github.com/OpenXiangShan/fudian)处进行维护，其中包含以下模块:
+The floating-point components used in the Xiangshan Nanhu version are maintained at [fudian](https://github.com/OpenXiangShan/fudian), which includes the following modules:
 
 * Two-path Floating-point Adder
 * Floating-point Multiplier
@@ -10,8 +10,8 @@
 * Float -> Float Converter
 * Floating-point Divider and SQRT Unit
 
-其中FMA操作延迟为5拍，其余运算均为3拍延迟。
+The FMA operation delay is 5 beats, and the rest of the operations are 3 beats.
 
 ## DIV & SQRT
 
-香山的浮点除法部件和定点除法一样采用 SRT16 算法。浮点开方部件使用 SRT4 算法。两者共用预处理和后处理逻辑。
+The floating-point division component of Xiangshan uses the SRT16 algorithm like the fixed-point division. The floating-point square root component uses the SRT4 algorithm. Both share the pre-processing and post-processing logic.
