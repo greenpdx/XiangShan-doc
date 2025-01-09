@@ -1,35 +1,35 @@
-# 译码单元 (Decode Unit)
-## 基本功能
-指令从指令缓存中取出，送进指令缓冲（队列）中暂存，然后以每周期 6 条的的速度送入译码单元译码，再传给下一个流水级。
+# Unidad de decodificación
+## Funcionalidad básica
+Las instrucciones se extraen de la memoria caché de instrucciones, se envían al búfer de instrucciones (cola) para su almacenamiento temporal y luego se envían a la unidad de decodificación para su decodificación a una velocidad de 6 por ciclo, y luego pasan a la siguiente etapa de la cadena de procesamiento.
 
-## 指令融合 (Instruction Fusion)
-译码单元支持了一些指令的融合，在 `FusionDecoder` 模块中会基于连续两条指令的 32bit 数据完成指令融合。对非连续的两条指令，目前香山没有支持指令融合。
+## Instrucción Fusión
+La unidad de decodificación admite la fusión de algunas instrucciones. En el módulo `FusionDecoder`, la fusión de instrucciones se realiza en función de los datos de 32 bits de dos instrucciones consecutivas. Actualmente, Xiangshan no admite la fusión de instrucciones para dos instrucciones no contiguas.
 
-目前，香山支持如下情况的指令融合：
+Actualmente, Xiangshan admite la siguiente fusión de comandos:
 
-* clear upper 32 bits / get lower 32 bits: `slli r1, r0, 32` + `srli r1, r1, 32`
-* clear upper 48 bits / get lower 16 bits: `slli r1, r0, 48` + `srli r1, r1, 48`
-* clear upper 48 bits / get lower 16 bits: `slliw r1, r0, 16` + `srliw r1, r1, 16`
-* sign-extend a 16-bit number: `slliw r1, r0, 16` + `sraiw r1, r1, 16`
-* shift left by one and add: `slli r1, r0, 1` + `add r1, r1, r2`
-* shift left by two and add: `slli r1, r0, 2` + `add r1, r1, r2`
-* shift left by three and add: `slli r1, r0, 3` + `add r1, r1, r2`
-* shift zero-extended word left by one: `slli r1, r0, 32` + `srli r1, r0, 31`
-* shift zero-extended word left by two: `slli r1, r0, 32` + `srli r1, r0, 30`
-* shift zero-extended word left by three: `slli r1, r0, 32` + `srli r1, r0, 29`
-* get the second byte: `srli r1, r0, 8` + `andi r1, r1, 255`
-* shift left by four and add: `slli r1, r0, 4` + `add r1, r1, r2`
-* shift right by 29 and add: `srli r1, r0, 29` + `add r1, r1, r2`
-* shift right by 30 and add: `srli r1, r0, 30` + `add r1, r1, r2`
-* shift right by 31 and add: `srli r1, r0, 31` + `add r1, r1, r2`
-* shift right by 32 and add: `srli r1, r0, 32` + `add r1, r1, r2`
-* add one if odd, otherwise unchanged: `andi r1, r0, 1` + `add r1, r1, r2`
-* add one if odd (in word format), otherwise unchanged: `andi r1, r0, 1` + `addw r1, r1, r2`
-* `addw` and extract its lower 8 bits (fused into `addwbyte`)
-* `addw` and extract its lower 1 bit (fused into `addwbit`)
-* `addw` and `zext.h` (fused into `addwzexth`)
-* `addw` and `sext.h` (fused into `addwsexth`)
-* logic operation and extract its LSB
-* logic operation and extract its lower 16 bits
-* `OR(Cat(src1(63, 8), 0.U(8.W)), src2)`
-* mul 7-bit data with 32-bit data
+* limpia los 32 bits superiores / obtiene los 32 bits inferiores: `slli r1, r0, 32` + `srli r1, r1, 32`
+* limpia los 48 bits superiores / obtiene los 16 bits inferiores: `slli r1, r0, 48` + `srli r1, r1, 48`
+* limpia los 48 bits superiores / obtiene los 16 bits inferiores: `slliw r1, r0, 16` + `srliw r1, r1, 16`
+* signo-extensión de un número de 16 bits: `slliw r1, r0, 16` + `sraiw r1, r1, 16`
+* desplazar a la izquierda uno a uno y agregar: `slli r1, r0, 1` + `add r1, r1, r2`
+* desplazar a la izquierda dos veces y agregar: `slli r1, r0, 2` + `add r1, r1, r2`
+* desplazar a la izquierda tres veces y agregar: `slli r1, r0, 3` + `add r1, r1, r2`
+* desplaza la palabra extendida a cero a la izquierda en uno: `slli r1, r0, 32` + `srli r1, r0, 31`
+* desplaza la palabra extendida a cero hacia la izquierda por dos: `slli r1, r0, 32` + `srli r1, r0, 30`
+* desplaza la palabra extendida a cero a la izquierda por tres: `slli r1, r0, 32` + `srli r1, r0, 29`
+* obtener el segundo byte: `srli r1, r0, 8` + `andi r1, r1, 255`
+* desplazar a la izquierda cuatro veces y agregar: `slli r1, r0, 4` + `add r1, r1, r2`
+* desplazar a la derecha 29 y agregar: `srli r1, r0, 29` + `add r1, r1, r2`
+* desplazar a la derecha 30 y agregar: `srli r1, r0, 30` + `add r1, r1, r2`
+* desplazar a la derecha 31 y agregar: `srli r1, r0, 31` + `add r1, r1, r2`
+* desplazar a la derecha 32 y agregar: `srli r1, r0, 32` + `add r1, r1, r2`
+* agrega uno si es impar, de lo contrario no cambia: `andi r1, r0, 1` + `add r1, r1, r2`
+* agregue uno si es impar (en formato Word), de lo contrario no cambia: `andi r1, r0, 1` + `addw r1, r1, r2`
+* `addw` y extrae sus 8 bits inferiores (fusionados en `addwbyte`)
+* `addw` y extrae su bit inferior (fusionado en `addwbit`)
+* `addw` y `zext.h` (fusionados en `addwzexth`)
+* `addw` y `sext.h` (fusionados en `addwsext`)
+* operación lógica y extraer su LSB
+* operación lógica y extraer sus 16 bits inferiores
+* `O(Gato(origen1(63, 8), 0.U(8.W)), origen2)`
+* mul de datos de 7 bits con datos de 32 bits
