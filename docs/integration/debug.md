@@ -1,115 +1,90 @@
-# JTAG and Debug<br>JTAG和调试
+# JTAG y depuración
 
-NANHU implements [RISC-V External Debug Support Version 0.13.2](https://riscv.org/wp-content/uploads/2019/03/riscv-debug-release.pdf).<br>南湖实现了[RISC-V外部调试支持0.13.2版本](https://riscv.org/wp-content/uploads/2019/03/riscv-debug-release.pdf)。
+NANHU implementa [RISC-V External Debug Support versión 0.13.2](https://riscv.org/wp-content/uploads/2019/03/riscv-debug-release.pdf). -V soporte de depuración externa versión 0.13.2. 2](https://riscv.org/wp-content/uploads/2019/03/riscv-debug-release.pdf).
 
-NANHU uses components including Debug Module, Debug Module Interface, Debug Transport Module and JTAG Interface.<br>南湖使用的组件包括调试模块、调试模块接口、调试传输模块和 JTAG 接口。
+NANHU utiliza componentes que incluyen el módulo de depuración, la interfaz del módulo de depuración, el módulo de transporte de depuración y la interfaz JTAG.
 
-NANHU Debug Module supports Program Buffer (16 bytes) and System Bus Access. Abstract Commands are implemented using Program Buffer.
-It is connected to L3 crossbar using TileLink to support System Bus Access.
-It has two parts: DMInner and DMOuter. DMInner is driven by core clock while DMOuter is driven by JTAG clock. DMOuter issues debug interrupts.<br>南湖调试模块支持程序缓冲区（16字节）和系统总线访问。抽象命令通过程序缓冲区实现。
-它通过 TileLink 连接到 L3 互联以支持系统总线访问。
-它由两部分组成：DMInner 和 DMOuter。DMInner 由内核时钟驱动，而 DMOuter 则由 JTAG 时钟驱动。DMOuter 触发调试中断。
+El módulo de depuración NANHU admite el búfer de programa (16 bytes) y el acceso al bus del sistema. Los comandos abstractos se implementan mediante el búfer de programa.
+Está conectado a la barra transversal L3 mediante TileLink para admitir el acceso al bus del sistema.
+Tiene dos partes: DMInner y DMOuter. DMInner es controlado por el reloj del núcleo, mientras que DMOuter es controlado por el reloj JTAG. DMOuter emite interrupciones de depuración.<br>El módulo de depuración de Nanhu admite el acceso al búfer de programa (16 bytes) y al bus del sistema. Los comandos abstractos se implementan a través de buffers de programa.
+Se conecta a la interconexión L3 a través de TileLink para admitir el acceso al bus del sistema.
+Consta de dos partes: DMInner y DMOuter. DMInner es impulsado por el reloj central, mientras que DMOuter es impulsado por el reloj JTAG. DMOuter activa una interrupción de depuración.
 
-## Debug &nbsp; 调试
+## Depuración
 
-NANHU CSR has a one bit register indicating whether it is in Debug Mode.<br>南湖的CSR通过一个单比特寄存器指示它是否处于调试模式。
+NANHU CSR tiene un registro de un bit que indica si está en modo de depuración.
 
-Debug mode can be entered when:<br>以下情况可以进入调试模式：
+Se puede ingresar al modo de depuración cuando:
 
-* Debug Module issues a debug interrupt.<br>调试模块触发了调试中断。
+* El módulo de depuración emite una interrupción de depuración.<br>El módulo de depuración activó una interrupción de depuración.
 
-* An ebreak is executed in mode X and ebreakX is executed (X is M, S, or U).<br>在X模式下执行ebreak，并执行ebreakX（X为M、S或U）。
+* Se ejecuta un ebreak en modo X y se ejecuta ebreakX (X es M, S o U).
 
-* The hart has returned from Debug Mode, and step bit in dcsr is set. The hart enters debug mode after exactly one instruction has committed.<br>硬件线程（hart）已从调试模式返回，且 dcsr 中的step位被置位。当一条指令执行完毕后，硬件线程进入调试模式。
+* El hart ha regresado del modo de depuración y el bit de paso en dcsr está configurado. El hart ingresa al modo de depuración después de que se haya confirmado exactamente una instrucción. Configurar. Cuando se ejecuta una instrucción, el hilo de hardware entra en modo de depuración.
 
-* Trigger hit with action bit set to 1 in the corresponding mcontrol CSR.<br>触发器命中时将 mcontrol CSR 中相应的将操作位设置为 1
+* El disparador se activa con el bit de acción establecido en 1 en el CSR de mcontrol correspondiente.<br>Cuando se activa el disparador, el bit de acción correspondiente en el CSR de mcontrol se establece en 1
 
-NANHU implements the following debug mode registers:
-Debug control and status register (dcsr), Debug PC (dpc), Debug Scratch (dscratch and dscratch1).<br>南湖实现了以下调试模式寄存器：
-调试控制和状态寄存器（dssr）、调试 PC（dpc）、调试暂存器（dscratch 和 dscratch1）。
+NANHU implementa los siguientes registros de modo de depuración:
+Registro de estado y control de depuración (dcsr), Debug PC (dpc), Debug Scratch (dscratch y dscratch1).<br>Southlake implementa los siguientes registros de modo de depuración:
+Registro de estado y control de depuración (dssr), PC de depuración (dpc), registros de bloc de notas de depuración (dscratch y dscratch1).
 
-### Debug control and status register &nbsp; 调试控制和状态寄存器
+### Control de depuración y registro de estado Control de depuración y registro de estado
 
-NANHU implements optional dcsr bits ebreaks, ebreaku, mprven and step.
-See [RISC-V External Debug Support Version 0.13.2](https://riscv.org/wp-content/uploads/2019/03/riscv-debug-release.pdf) for more detail.<br>NANHU实现了可选的 dcsr 位 ebreaks、ebreaku、mprven 和 step。
-更多细节请参阅 [RISC-V 外部调试支持 0.13.2 版](https://riscv.org/wp-content/uploads/2019/03/riscv-debug-release.pdf)。
+NANHU implementa bits dcsr opcionales: ebreaks, ebreaku, mprven y step.
+Consulte [RISC-V External Debug Support Version 0.13.2](https://riscv.org/wp-content/uploads/2019/03/riscv-debug-release.pdf) para obtener más detalles.<br>NANHU ha implementado Los bits dcsr opcionales son ebreaks, ebreaku, mprven y step.
+Consulte [RISC-V External Debug Support Release 0.13.2](https://riscv.org/wp-content/uploads/2019/03/riscv-debug-release.pdf) para obtener más detalles.
 
-### Debug PC &nbsp; 调试PC
+### Depuración de PC Depuración de PC
 
-Debug PC stores the program counter of the exact instruction that trapped into debug mode. The pc is recovered when a dret is executed. Debug Module can modify this CSR to manipulate the path of program execution.<br>调试PC用于存储进入调试模式的精确指令的程序计数器。PC在执行dret指令时恢复。调试模块可以修改该 CSR，以控制程序的执行路径。
+El módulo de depuración de la PC almacena el contador del programa de la instrucción exacta que entró en modo de depuración. El PC se recupera cuando se ejecuta un dret. El módulo de depuración puede modificar este CSR para manipular la ruta de ejecución del programa. modo al contador del programa para la instrucción exacta. La PC se restaura cuando se ejecuta la instrucción dret. El módulo de depuración puede modificar este CSR para controlar la ruta de ejecución del programa.
 
-### Debug Scratch &nbsp; 调试暂存器
+### Depuración Scratch Bloc de notas de depuración
 
-There are 2 debug scratch registers (dscratch and dscratch1) in NANHU. These registers are used as scratch registers by the Debug Module.<br>NANHU 中有 2 个调试暂存器（dscratch 和 dscratch1）。这些寄存器被调试模块用作暂存器。
+Hay 2 registros de depuración (dscratch y dscratch1) en NANHU. Estos registros son utilizados como registros de depuración por el módulo de depuración.<br>Hay 2 registros de depuración (dscratch y dscratch1) en NANHU. El módulo de depuración utiliza estos registros como registros de borrador.
 
-## Trigger &nbsp; 触发器
+## Desencadenar
 
-### Trigger select register &nbsp; 触发选择寄存器
+### Registro de selección de disparador Registro de selección de disparador
 
-Tselect selects one of the 10 triggers in  NANHU. All NANHU's triggers are listed below.<br>Tselect 从南湖的 10 个触发器中选择一个。下表列出了南湖的所有触发器。
+Tselect selecciona uno de los 10 activadores de NANHU. Todos los activadores de NANHU se enumeran a continuación.<br>Tselect selecciona uno de los 10 activadores de NANHU. La siguiente tabla enumera todos los desencadenantes de Southlake.
 
-| No. | Type | Timing bit | Chain  bit | Select bit | Match bit |
+| No. | Tipo | Broca de sincronización | Broca de cadena | Broca de selección | Broca de coincidencia |
 | --- | --- | --- | --- | --- | --- |
-| 0 | execute/store/load | Wired to  0 | Y | Y* | 0, 2 or 3 |
-| 1 | execute/store/load |  | Y | Y* |
-| 2 | execute/store/load |  | Y | Y* |
-| 3 | execute/store/load |  | Y | Y* |
-| 4 | execute/store/load |  | Y | Y* |
-| 5 | execute/store/load |  | Y | Y* |
-| 6 | execute/store/load |  | Y | Y* |
-| 7 | execute/store/load |  | Y | Y* |
-| 8 | execute/store/load |  | Y | Y* |
-| 9 | execute/store/load |  | Wired to 0 | Y* |
+| 0 | ejecutar/almacenar/cargar | Conectado a 0 | Y | Y* | 0, 2 o 3 |
+| 1 | ejecutar/almacenar/cargar | | Y | Y* |
+| 2 | ejecutar/almacenar/cargar | | Y | Y* |
+| 3 | ejecutar/almacenar/cargar | | Y | Y* |
+| 4 | ejecutar/almacenar/cargar | | Y | Y* |
+| 5 | ejecutar/almacenar/cargar | | Y | Y* |
+| 6 | ejecutar/almacenar/cargar | | Y | Y* |
+| 7 | ejecutar/almacenar/cargar | | Y | Y* |
+| 8 | ejecutar/almacenar/cargar | | Y | Y* |
+| 9 | ejecutar/almacenar/cargar | | Conectado a 0 | Y* |
 
-*: If type is store or load, select bit will be WARL as 0.<br>如果类型是store或load，select位将被置为WARL的0。
+*: Si el tipo es almacenar o cargar, el bit de selección será WARL como 0.<br>Si el tipo es almacenar o cargar, el bit de selección se establecerá en WARL como 0.
 
-### Trigger data status register &nbsp; 触发器数据状态寄存器
+### Registro de estado de datos de activación Registro de estado de datos de activación
 
-All triggers in NANHU are match control triggers. Each has a mcontrol (tdata1), data (tdata2) and info (tinfo) register.<br>南湖中的所有触发器都是匹配控制触发器。每个触发器都有一个 mcontrol（tdata1）、data（tdata2）和info（tinfo）寄存器。
+Todos los activadores de NANHU son activadores de control de coincidencia. Cada uno tiene un registro mcontrol (tdata1), un registro de datos (tdata2) y un registro de información (tinfo).<br>Todos los activadores de NANHU son activadores de control de coincidencia. Cada flip-flop tiene un registro mcontrol (tdata1), un registro de datos (tdata2) y un registro de información (tinfo).
 
-## Breakpoint &nbsp; 断点
+## Punto de interrupción
 
-NANHU supports using ebreak instruction as software breakpoint. To use this in privileged mode X, ebreakX bit in dcsr should be set. Hardware breakpoints are implemented using triggers.<br>南湖支持使用 ebreak 指令作为软件断点。为了在特权模式 X 下使用该指令，应设置 dcsr 中的 ebreakX 位。硬件断点通过触发器实现。
+NANHU admite el uso de la instrucción ebreak como punto de interrupción de software. Para utilizarla en el modo privilegiado X, se debe configurar el bit ebreakX en dcsr. Los puntos de interrupción de hardware se implementan mediante activadores. Para utilizar esta instrucción en el modo privilegiado X, se debe configurar el bit ebreakX en dcsr. Los puntos de interrupción de hardware se implementan mediante activadores.
 
-## Debug memory map &nbsp; 调试内存映射
+## Mapa de memoria de depuración Mapa de memoria de depuración
 
-Debug Module uses address space (0x3802_0000,  0x3802_0fff).<br>调试模块使用从0x3802_0000到 0x3802_0fff的地址空间。
+El módulo de depuración utiliza el espacio de direcciones (0x3802_0000, 0x3802_0fff).<br>El módulo de depuración utiliza el espacio de direcciones de 0x3802_0000 a 0x3802_0fff.
 
-## Debug Module Interface &nbsp; 调试模块接口
+## Interfaz del módulo de depuración
 
-DMI has a bus width of 7 bits.<br>DMI有一个宽度为7位的总线。
+DMI tiene un ancho de bus de 7 bits.<br>DMI tiene un ancho de bus de 7 bits.
 
-## JTAG Interface &nbsp; JTAG接口
+## Interfaz JTAG Interfaz JTAG
 
-Nanhu’s JTAG interface supports asynchronous reset TRSTn.<br>南湖的 JTAG 接口支持异步复位 TRSTn。
+La interfaz JTAG de Nanhu admite el reinicio asincrónico TRSTn.<br>La interfaz JTAG de Nanhu admite el reinicio asincrónico TRSTn.
 
-## Connecting to Debug Module &nbsp; 连接调试模块
+## Conexión al módulo de depuración
 
-First, [riscv-openocd](https://github.com/riscv/riscv-openocd) needs to be compiled. See [Github README](https://github.com/riscv/riscv-openocd/blob/riscv/README) on how to compile riscv-openocd.<br>首先，您需要编译 [riscv-openocd](https://github.com/riscv/riscv-openocd)。有关如何编译 riscv-openocd，请参考 [Github README](https://github.com/riscv/riscv-openocd/blob/riscv/README)。
+Primero, es necesario compilar [riscv-openocd](https://github.com/riscv/riscv-openocd). Consulta el archivo README de Github](https://github.com/riscv/riscv-openocd/blob/riscv /README) sobre cómo compilar riscv-openocd.<br>Primero, debes compilar [riscv-openocd](https://github.com/riscv/riscv-openocd). Para obtener información sobre cómo compilar riscv-openocd, consulte el [README de Github](https://github.com/riscv/riscv-openocd/blob/riscv/README).
 
-Run simv with options: `./difftest/simv [+workload=WorkloadName.bin] +no-diff +enable-jtag`<br>通过以下操作运行 simv： `./difftest/simv [+workload=WorkloadName.bin] +no-diff +enable-jtag`
-
-Then in another terminal, run: `./openocd -f XS.cfg`<br
-后在其他终端运行：`./openocd -f XS.cfg`
-
-The content of an example openocd config file XS.cfg is shown as below:<br>openocd 配置文件 XS.cfg 示例内容如下：
-
-```
-adapter driver remote_bitbang
-remote_bitbang host localhost
-remote_bitbang port 23334
-
-
-set _CHIPNAME riscv
-jtag newtap $_CHIPNAME cpu -irlen 5
-
-set _TARGETNAME $_CHIPNAME.cpu
-target create $_TARGETNAME riscv-chain-position $_TARGETNAME
-
-init
-reset halt
-echo "reset and halt at the reset vector"
-exit
-```
-
-To connect to GDB, remove the “exit” command shown above. In another terminal, launch riscv64-unknown-elf-gdb and run command: `target extended-remote:3333`<br>要连接 GDB，请删除上面的 "exit "命令，并在另一个终端启动 riscv64-unknown-elf-gdb，运行命令：`target extended-remote:3333`
+Ejecute simv con las opciones: `./difftest/simv [+workload=WorkloadName.bin] +no-diff
