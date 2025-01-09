@@ -1,20 +1,20 @@
-# 前端架构文档
-这一章描述香山处理器前端（Frontend）的整体架构。前端的模块关系和数据通路由下图所示：
+# Documentación de la arquitectura front-end
+Este capítulo describe la arquitectura general del frontend del procesador Xiangshan. La relación del módulo front-end y la ruta de datos se muestran en la siguiente figura:
 
 ![frontend](../figs/frontend/frontend.png)
 
 
 
-南湖架构采取了一种分支预测和指令缓存解耦的取指架构，分支预测单元提供取指请求，写入一个队列，该队列将其发往取指单元，送入指令缓存。
-取出的指令码通过预译码初步检查分支预测的错误并及时冲刷预测流水线，检查后的指令送入指令缓冲并传给译码模块，最终形成后端的指令供给。
+La arquitectura Nanhu adopta una arquitectura de búsqueda de instrucciones que desacopla la predicción de bifurcaciones y la memoria caché de instrucciones. La unidad de predicción de bifurcaciones proporciona solicitudes de búsqueda de instrucciones y las escribe en una cola, que las envía a la unidad de búsqueda de instrucciones y a la memoria caché de instrucciones.
+El código de instrucción obtenido se decodifica previamente para verificar inicialmente si hay errores de predicción de bifurcación y vaciar el flujo de predicción de manera oportuna. Las instrucciones verificadas se envían al búfer de instrucciones y se pasan al módulo de decodificación, lo que finalmente forma el suministro de instrucciones de back-end.
 
-这一章包括以下几个部分：
+Este capítulo incluye las siguientes partes:
 
-* [分支预测](bp.md)
-* [取指目标队列](ftq.md)
-* [取指令单元](ifu.md)
-* [指令缓存](icache.md)
-* [译码单元](decode.md)
+* [Predicción de rama](bp.md)
+* [Instrucción de búsqueda de destino de la cola](ftq.md)
+* [Unidad de obtención de instrucciones](ifu.md)
+* [Caché de instrucciones](icache.md)
+* [Unidad de decodificación](decode.md)
 
-!!! note "关于缩写"
-    一些名词会在文档中以缩写形式出现（它们下方会有一个下划线），将鼠标停留在上面就可以看到缩写的全称。
+!!! nota "Acerca de las abreviaturas"
+ Algunos sustantivos aparecerán en el documento en forma abreviada (aparecerán subrayados debajo). Puedes ver el nombre completo de la abreviatura al pasar el ratón sobre ellos.
