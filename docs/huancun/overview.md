@@ -1,34 +1,34 @@
-# L2/L3 Cache 总体架构
+# Arquitectura general de la caché L2/L3
 
-XiangShan 南湖架构的 L2/L3 Cache (即 [huancun 子项目](https://github.com/OpenXiangShan/HuanCun)) 是参考 [block-inclusive-cache-sifive](https://github.com/sifive/block-inclusivecache-sifive) 设计的基于目录的 Non-inclusive Cache (inclusive directory, non-inclusive data)。
+La caché L2/L3 de la arquitectura XiangShan Nanhu (es decir, el [subproyecto huancun](https://github.com/OpenXiangShan/HuanCun)) se basa en [block-inclusive-cache-sifive](https://github.com/sifive / block-inclusivecache-sifive) es un caché no inclusivo basado en directorios (directorio inclusivo, datos no inclusivos) diseñado.
 
-huancun 以 Tilelink 为总线一致性协议，并可以通过添加自定义 Tilelink user-bit 解决在 L1 Cache 大于 32KB 时产生的 [Cache Alias 问题](./cache_alias.md)。
+huancun utiliza Tilelink como protocolo de consistencia de bus y puede resolver el [problema de alias de caché](./cache_alias.md) cuando el caché L1 es mayor a 32 KB agregando un bit de usuario Tilelink personalizado.
 
-huancun 的总体结构如下图所示：
+La estructura general de huancun se muestra en la siguiente figura:
 ![](../figs/huancun.png)
 
-huancun 可根据请求的地址低位为索引分 Slice 以提升并发度。每个 Slice 内部的 [MSHR](./mshr.md) 数量可配，负责具体的任务管理。
+Huancun puede dividir el índice según los bits bajos de la dirección solicitada para mejorar la concurrencia. La cantidad de [MSHR](./mshr.md) dentro de cada Slice es configurable y es responsable de la gestión de tareas específicas.
 
-[DataBanks ](./data.md)负责存储具体数据，可以通过参数配置 Bank 数量从而提升读写并行度。
+[DataBanks](./data.md) se encarga de almacenar datos específicos. La cantidad de bancos se puede configurar mediante parámetros para mejorar el paralelismo de lectura y escritura.
 
-[RefillBuffer ](./misc.md#refill_buffer)负责暂存 Refill 的数据，以直接 Bypass 到上层 Cache 而不需要经过 SRAM 写入。
+[RefillBuffer](./misc.md#refill_buffer) es responsable de almacenar temporalmente los datos de recarga para que puedan enviarse directamente a la memoria caché de nivel superior sin escribirse en la SRAM.
 
-Sink/Source\* 相关模块为 Tilelink [通道控制模块](./channels.md)，负责与标准 Tilelink 接口进行交互，一方面将外部请求转换为
-Cache 内部信号，另一方面接收 Cache 内部请求转换为 Tilelink 请求发出到接口。
+Sink/Source\* El módulo relevante es el Tilelink [módulo de control de canal](./channels.md), que es responsable de interactuar con la interfaz estándar de Tilelink, convirtiendo las solicitudes externas en
+Las señales internas de caché, por otro lado, reciben solicitudes internas de caché y las convierten en solicitudes Tilelink y las envían a la interfaz.
 
-在[目录组织](./directory.md)上，huancun 将上层数据与本层数据的目录分开存储，
-Self Directory/Client Directory 分别为当前层级 Cache Data 所对应的目录和上层 Cache Data 所对应的目录。
+En la [organización de directorios](./directory.md), huancun almacena los directorios de los datos de la capa superior y los datos de la capa actual por separado.
+El directorio propio/directorio del cliente son los directorios correspondientes a los datos de caché de nivel actual y a los datos de caché de nivel superior respectivamente.
 
-另外，[预取器](./prefetch.md)采用了 BOP(Best-Offset Prefetching) 算法，可通过参数进行配置或裁减。
+Además, el [prefetcher](./prefetch.md) utiliza el algoritmo BOP (Best-Offset Prefetching), que se puede configurar o recortar mediante parámetros.
 
 
 
-## huancun 的总体工作流程为：
+## El flujo de trabajo general de huancun es:
 
-1. [通道控制模块](./channels.md)接受 Tilelink 请求，将其转换为 Cache 内部请求。
+1. El [módulo de control de canal](./channels.md) acepta solicitudes de Tilelink y las convierte en solicitudes de caché interna.
 
-2. [MSHR Alloc 模块](./misc.md#alloc)为内部请求分配一个 [MSHR](./mshr.md)。
+2. El [módulo Alloc MSHR](./misc.md#alloc) asigna un [MSHR](./mshr.md) para la solicitud interna.
 
-3. [MSHR](./mshr.md) 根据不同请求的需求发起不同的任务，任务类型包括 Data 读写、向上下层 Cache 发送新请求或返回响应、触发或更新预取器等。
+3. [MSHR](./mshr.md) inicia distintas tareas según los requisitos de las distintas solicitudes. Los tipos de tareas incluyen la lectura y escritura de datos, el envío de nuevas solicitudes a las cachés superior e inferior o la devolución de respuestas, la activación o actualización de prefetchers, etc.
 
-4. 当一个请求所需的全部操作在 [MSHR](./mshr.md) 中完成时，[MSHR](./mshr.md) 被释放，等待接收新的请求。
+4. Cuando se completan todas las operaciones necesarias para una solicitud en [MSHR](./mshr.md), [MSHR](./mshr.md) se libera y espera nuevas solicitudes.
