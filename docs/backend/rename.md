@@ -1,40 +1,39 @@
-# 重命名 Rename
+# Rename
 
-在乱序处理器中，重命名阶段负责管理和维护逻辑寄存器与物理寄存器之间的映射，通过对逻辑寄存器的重命名，实现指令间依赖的消除，并完成乱序调度。本节介绍的重命名主要包含 Rename, RenameTable, FreeList 三个模块，分别负责 Rename 流水级的控制、重命名表的维护和空闲寄存器的维护。
+In an out-of-order processor, the renaming stage is responsible for managing and maintaining the mapping between logical registers and physical registers. By renaming logical registers, the dependencies between instructions are eliminated and out-of-order scheduling is completed. The renaming introduced in this section mainly includes three modules: Rename, RenameTable, and FreeList, which are responsible for the control of the Rename pipeline level, the maintenance of the renaming table, and the maintenance of free registers.
 
-## 重命名表 RenameTable
+## Rename Table
 
-重命名表的作用是维护逻辑寄存器与物理寄存器之间的映射关系，其操作端口包括一组读口 `readPorts` 和一组写口 `specWritePorts`。重命名表内部包含 32 个物理寄存器堆地址宽度的寄存器，分别代表 32 个逻辑寄存器对应的物理寄存器地址。目前，定点和浮点寄存器堆各有一套重命名表，根据未来的指令扩展情况，重命名表可以被配置成记录更多的内容（如条件寄存器堆、向量寄存器堆等重命名状态）。
+The function of the renaming table is to maintain the mapping relationship between logical registers and physical registers. Its operation ports include a set of read ports `readPorts` and a set of write ports `specWritePorts`. The renaming table contains 32 registers with a physical register stack address width, which represent the physical register addresses corresponding to the 32 logical registers. At present, there is a set of renaming tables for each fixed-point and floating-point register stack. According to the future instruction expansion, the renaming table can be configured to record more content (such as the renaming status of the conditional register stack, vector register stack, etc.).
 
-`readPorts` 是一组同步读接口，在 T+1 周期根据 T 周期的读地址和 `hold` 信号，对应地输出相应的重命名表读数据。在使用这一组端口时，读地址会在译码阶段进行赋值，并根据相应流水级的阻塞情况，对 `hold` 进行赋值。如果 `hold` 为 1，则读数据会保持不变，否则读数据将根据最新的读地址而更新。
+`readPorts` is a set of synchronous read interfaces. In T+1 cycle, the corresponding rename table read data is output according to the read address and `hold` signal of T cycle. When using this set of ports, the read address will be assigned in the decoding stage, and `hold` will be assigned according to the blocking of the corresponding pipeline stage. If `hold` is 1, the read data will remain unchanged, otherwise the read data will be updated according to the latest read address.
 
-`specWritePorts` 是一组写接口，根据重命名或者 ROB 回滚的状态，分别依据新指令重命名的信息和 ROB 回滚的信息，完成对重命名表的更新。T 周期的写数据会被更新至 T+1 周期的读数据中。
+`specWritePorts` is a set of write interfaces. According to the status of renaming or ROB rollback, the rename table is updated according to the information of new instruction renaming and ROB rollback respectively. The write data of T cycle will be updated to the read data of T+1 cycle.
 
-代码中的 `archWritePorts` 和 `debug_rdata` 两组端口仅用于调试使用，用来为 DiffTest 框架提供寄存器信息。
+The two groups of ports `archWritePorts` and `debug_rdata` in the code are only used for debugging, to provide register information for the DiffTest framework.
 
+## Free register list FreeList
 
-## 空闲寄存器列表 FreeList
+FreeList records the status of all free registers, and its size can be configured through the class parameter `size`. FreeList is essentially a queue, consisting of an entry pointer, a dequeue pointer, and a queue storage.
 
-FreeList 记录了所有的空闲寄存器状态，其大小是可以通过类参数 `size` 配置的。FreeList 本质上是一个队列，由入队指针、出队指针和队列存储组成。
+At initialization, FreeList contains all available physical registers. In our design, the logical register `i` is initially mapped to the physical register `i`, so FreeList contains 160 free physical register numbers from 32 to 191 in the initial state. When renaming, FreeList will give up to `RenameWidth` free physical register numbers for use. When the physical register is released (ROB commits instructions or rolls back), FreeList can enter up to `CommitWidth` free physical register numbers per beat.
 
-初始化时，FreeList 中包含所有可用的物理寄存器。在我们的设计中，初始时逻辑寄存器 `i` 会被映射至物理寄存器 `i`，因此 FreeList 在初始状态下包含 32-191 共 160 个空闲物理寄存器号。重命名时，FreeList 会给出至多 `RenameWidth` 个空闲物理寄存器号供使用。物理寄存器被释放时（ROB 提交指令或者回滚），FreeList 每一拍至多可以进入 `CommitWidth` 个空闲物理寄存器号。
+In the design of the Xiangshan processor, multiple references are supported for fixed-point physical registers, and the number of times each physical register is referenced is recorded through a reference count table (RefTable). Through reference counting, Xiangshan supports mapping multiple logical registers to the same physical register and supports Move Elimination optimization for Move instructions. In this case, the number of free physical registers can theoretically reach up to the total number of physical registers - 1. Therefore, in Xiangshan processors, the fixed-point FreeList size is the same as the physical register stack size (default is 192), and the floating-point FreeList size is the number of physical register stacks - 32 (default is 160).
 
-在香山处理器的设计中，针对定点物理寄存器支持多次引用，并通过引用计数表（RefTable）记录每一个物理寄存器被引用的次数。通过引用计数，香山支持将多个逻辑寄存器映射至同一个物理寄存器，并支持对 Move 指令的消除优化（Move Elimination）。在这种情况下，空闲的物理寄存器数量理论上最高可达到物理寄存器总数 - 1。因此，在香山处理器中，定点 FreeList 大小与物理寄存器堆大小相同（默认为 192），浮点 FreeList 大小是物理寄存器堆数量 - 32（默认为 160）。
+Currently, there are two implementations of FreeList in Xiangshan, which are used in the absence/presence of reference counting, corresponding to `StdFreeList` and `MEFreeList`. In the case where there is no reference counting, when a ROB rollback occurs, the free registers released in FreeList must be those that were allocated just before, and the same as the number of new physical registers that need to be allocated in the rollback instruction. In this case, the storage of FreeList does not need to be written repeatedly, and only the dequeue pointer needs to be rolled back. In the case of reference counting, due to the existence of repeated references (no allocation through FreeList, but increasing the reference count of a physical register), the number of physical registers rolled back is not necessarily the same as the number of physical registers released by FreeList. In this case, FreeList needs to maintain several write ports to facilitate the maintenance of the actual released physical registers through the reference counting mechanism.
 
-目前，FreeList 在香山中共有两种实现，分别在不存在 / 存在引用计数功能的情况下使用，对应 `StdFreeList` 和 `MEFreeList`。对于不存在引用计数的情况，当发生 ROB 回滚时，FreeList 中释放的空闲寄存器一定是前面恰好被分配出的那一些，且与回滚指令中需要分配新物理寄存器的数量相同。在种情况下，FreeList 的存储不需要被重复写入，只需要将出队指针往前回滚即可。对于存在引用计数的情况，由于重复引用情况的存在（不需要通过 FreeList 分配，而是增加一个物理寄存器的引用计数），回滚的物理寄存器数量与 FreeList 的释放数量并不一定相同。在这种情况下，FreeList 需要维护几个写端口，方便通过引用计数机制来维护实际释放的物理寄存器。
+### Reference Count Table RefTable
 
-### 引用计数表 RefTable
+As mentioned above, the reference count table is used to record the number of times each physical register is referenced. It has three sets of module interfaces: allocation `allocate` (increase the number of references), de-allocation `deallocate` (reduce the number of references), and release of physical registers (to FreeList) `freeRegs`.
 
-如前所述，引用计数表的作用是记录每一个物理寄存器被引用的次数，具有分配 `allocate`（增加引用次数）、取消分配 `deallocate`（减少引用次数）、释放物理寄存器（至 FreeList）`freeRegs` 三组模块接口。
-
-在存在引用计数功能的情况下，重命名对每一个物理寄存器的分配与释放都会告知 RefCounter。当一个物理寄存器的引用计数值变成 0 时，对应的物理寄存器会被释放进 FreeList 等待下次分配。为了时序的考虑，物理寄存器的释放会延后两拍进行。
+In the case of reference counting, the allocation and release of each physical register will be notified to RefCounter by renaming. When the reference count value of a physical register becomes 0, the corresponding physical register will be released into FreeList and wait for the next allocation. For timing considerations, the release of physical registers will be delayed by two beats.
 
 ## Rename
 
-重命名流水级的主要作用是更新指令的物理寄存器信息，包括 `psrc`, `pdest` 和 `old_pdest`。`psrc` 和 `old_pdest` 一般来源于重命名表。当一条指令需要分配新的物理寄存器时，如定点指令需要写寄存器堆且目的寄存器非零号寄存器、浮点指令需要写寄存器堆时，`pdest` 来源于 `FreeList` 的分配结果。由于指令间依赖的存在，对于同一拍进行重命名的指令，Rename 模块需要负责在他们之间进行物理寄存器号的旁路，如当指令 1 需要使用指令 0 的结果时，指令 1 的对应源操作数需要来源于指令 1 的目的寄存器。
+The main function of the rename pipeline is to update the physical register information of the instruction, including `psrc`, `pdest` and `old_pdest`. `psrc` and `old_pdest` are generally derived from the rename table. When an instruction needs to allocate a new physical register, such as when a fixed-point instruction needs to write to the register stack and the destination register is a non-zero register, and when a floating-point instruction needs to write to the register stack, `pdest` comes from the allocation result of `FreeList`. Due to the existence of dependencies between instructions, for instructions that are renamed in the same beat, the Rename module needs to be responsible for bypassing the physical register number between them. For example, when instruction 1 needs to use the result of instruction 0, the corresponding source operand of instruction 1 needs to come from the destination register of instruction 1.
 
-香山处理器实现了 Move 指令消除（Move Elimination）功能，在这种情况下，对 Move 指令不再分配新的物理寄存器，而是直接将其目的逻辑寄存器重命名至源操作数对应的物理寄存器。
+The Xiangshan processor implements the Move Elimination function. In this case, no new physical register is allocated for the Move instruction, but its destination logical register is directly renamed to the physical register corresponding to the source operand.
 
-香山处理器还实现了对于 LUI 和 LOAD 指令对的操作数旁路功能，在这种情况下，LOAD 指令的基地址将被替换为立即数（而不是 LUI 的目的寄存器），替换是通过对 srcType 的修改完成的，立即数会被存入 psrc 和 imm 域中。
+The Xiangshan processor also implements operand bypass for LUI and LOAD instruction pairs. In this case, the base address of the LOAD instruction will be replaced by an immediate value (instead of the destination register of the LUI). The replacement is completed by modifying the srcType, and the immediate value will be stored in the psrc and imm fields.
 
-在目前的实现中，为了时序的考虑，我们做了如下优化：在需要资源分配与仲裁的位置大多采用了保守策略，如浮点物理寄存器无空闲时，我们也将阻塞流水线，即使流水线里面只有定点指令；由于指令在 ROB 中是严格连续的，我们在重命名阶段提前为指令分配了 ROB 号，但仍然在后续阶段才判断 ROB 的入队仲裁，这样能够在不损失 ROB 实际可用项数、不影响性能的情况下通过提前一级锁存 ROB 号、增加几十个寄存器的方式完成时序优化。
+In the current implementation, for timing considerations, we have made the following optimizations: conservative strategies are mostly used in locations where resource allocation and arbitration are required. For example, when there is no free floating-point physical register, we will block the pipeline even if there are only fixed-point instructions in the pipeline; because instructions are strictly continuous in the ROB, we assign ROB numbers to instructions in advance during the renaming stage, but still judge the ROB enqueue arbitration in the subsequent stage. In this way, the timing optimization can be completed by latching the ROB number one level in advance and adding dozens of registers without losing the actual number of available items in the ROB and affecting performance.
