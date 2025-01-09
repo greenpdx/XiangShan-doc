@@ -1,19 +1,19 @@
-# 派遣 Dispatch
+# Dispatch
 
-在香山处理器中，派遣部分逻辑实际上共包括两级流水级，第一级 `Dispatch` 负责将指令分类并发送至定点、浮点与访存三类派遣队列（Dispatch Queue），第二级 `Dispatch2Rs` 负责将对应类型的指令进一步根据不同的运算操作类型派遣至不同的保留站。
+In the Xiangshan processor, the dispatch logic actually includes two pipeline stages. The first stage `Dispatch` is responsible for classifying instructions and sending them to three types of dispatch queues (Dispatch Queue) of fixed-point, floating-point and memory access. The second stage `Dispatch2Rs` is responsible for further dispatching the corresponding types of instructions to different reservation stations according to different operation types.
 
-目前，派遣阶段整体的逻辑较长且复杂，仍然有很大的优化空间。
+At present, the overall logic of the dispatch stage is long and complex, and there is still a lot of room for optimization.
 
-## 第一级 Dispatch
+## First-level Dispatch
 
-第一级派遣的源码在 `Dispatch.scala`，其中包含了对不同指令类型的判断、对每一条指令是否能够进入下一级的判断以及对 BusyTable 的置位（指令会在这一流水级把它的目的寄存器状态置为无效）。
+The source code of the first-level dispatch is in `Dispatch.scala`, which includes the judgment of different instruction types, the judgment of whether each instruction can enter the next stage, and the setting of BusyTable (the instruction will set its destination register status to invalid at this pipeline stage).
 
-需要注意的是，出于时序考虑，我们简化了指令可以继续进入下一级的条件。目前，当且仅当所有资源都是充足的（派遣队列有足够空项、ROB 有足够空项等），指令才能够进入下一级。也就是说，定点指令可能会因为浮点派遣队列满而被阻塞。
+It should be noted that for timing considerations, we have simplified the conditions for instructions to continue to enter the next stage. At present, instructions can enter the next stage if and only if all resources are sufficient (there are enough empty items in the dispatch queue, enough empty items in the ROB, etc.). That is to say, fixed-point instructions may be blocked because the floating-point dispatch queue is full.
 
-## 派遣队列 Dispatch Queue
+## Dispatch Queue
 
-派遣队列是第一级与第二级的桥梁，其中存放了一部分指令。在分支预测等重定向请求发生时，这个队列中的指令存在一定的可能性被刷 / 不能被刷，因此队列逻辑中还包含了对 `robIdx` 的取消判断。
+The dispatch queue is a bridge between the first level and the second level, in which some instructions are stored. When redirection requests such as branch prediction occur, there is a certain possibility that the instructions in this queue will be flushed/not flushed, so the queue logic also includes the cancellation judgment of `robIdx`.
 
-## 第二级 Dispatch2Rs
+## Second level Dispatch2Rs
 
-第二级派遣负责的是根据不同的指令类型、不同的保留站可接受的指令类型，对指令做一个路由，将它们发送到不同的保留站。目前，我们实现了几种简单的派遣策略，且参数化系统还未完整测试。
+The second level dispatch is responsible for routing instructions according to different instruction types and instruction types acceptable to different reservation stations, and sending them to different reservation stations. At present, we have implemented several simple dispatch strategies, and the parameterized system has not been fully tested.。
