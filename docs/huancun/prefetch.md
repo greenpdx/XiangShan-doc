@@ -1,16 +1,16 @@
-# L2预取器设计
+# Diseño del prefetcher L2
 
-XiangShan的L2 Cache采用了Best-Offset硬件预取。BOP是一种基于偏移量的预取器，偏移量可以随着程序动态执行的情况动态调整，其主要目的是保证预取的及时性(Timeliness)。
+La caché L2 de XiangShan utiliza la precarga de hardware Best-Offset. BOP es un prefetch basado en offset. El offset se puede ajustar dinámicamente a medida que se ejecuta el programa. Su objetivo principal es garantizar la puntualidad del prefetch.
 
-具体的预取算法可以参考论文，下面只介绍与XiangShan具体实现有关的部分。
+El algoritmo de precarga específico se puede encontrar en el artículo. A continuación, se presenta únicamente la parte relacionada con la implementación específica de XiangShan.
 
 <!--
-这里可能需要一张图
+Es posible que necesites una imagen aquí
 -->
-首先，L2的目录中会用一位prefetch位记录一个cache块是否是预取上来的块。当MSHR接收到DCache的Acquire请求，如果该请求地址在L2不命中或者命中了预取上来的块，MSHR就会发起一个“触发预取”的请求，该请求会发给预取器，预取器会在请求地址的基础上，加上根据Best-offset算法训练出来的最佳偏移量，生成预取地址，然后预取器会将预取请求发送到该地址所在的bank，请求类型为Intent，MSHR分配器为预取请求分配一项MSHR，如果预取块不在L2中，MSHR会负责从L3把预取块拿上来。
+En primer lugar, se utiliza un bit de prebúsqueda en el directorio L2 para registrar si un bloque de caché es un bloque prebúsquedo. Cuando MSHR recibe una solicitud de adquisición de DCache, si la dirección solicitada no llega a la capa 2 o llega al bloque precargado, MSHR iniciará una solicitud de "activación de precarga", que se enviará al precargador. El precargador generará una dirección de precarga basada en en la dirección de la solicitud y el mejor desplazamiento entrenado por el algoritmo Best-offset. Luego, el prefetcher enviará la solicitud de prefetch al banco donde se encuentra la dirección. El tipo de solicitud es Intent, el asignador MSHR asigna un MSHR para la solicitud de prefetch. Si el bloque de precarga no está en L2, MSHR será responsable de traer el bloque de precarga desde L3.
 
-当MSHR完成一次预取，会再发送一个响应到预取器，预取器会根据这个响应训练Best-offset算法。
+Cuando MSHR completa una búsqueda previa, envía otra respuesta al buscador previo, y el buscador previo entrena el algoritmo Best-offset basándose en esta respuesta.
 
 <!--
-TODO: 记得引用！！！
+TODO: ¡Recuerda citar! ! !
 -->
