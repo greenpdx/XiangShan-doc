@@ -1,179 +1,143 @@
-# Load Queue
+# Cola de carga
 
-本章介绍香山处理器南湖架构 load queue 的设计.
+Este capítulo presenta el diseño de la cola de carga de la arquitectura Nanhu del procesador Xiangshan.
 
-南湖架构的 load queue 是一个 80 项循环队列. 其每周期至多: 
+La cola de carga de la arquitectura Southlake es una cola circular de 80 elementos. Cada ciclo tiene como máximo:
 
-* 从 dispatch 处接收 4 条指令
-* 从 load 流水线接收 2 条指令的结果, 以更新其内部的状态
-* 从 dcache 接收 miss refill 结果, 更新 load queue 中全部等待此次 refill 的指令的状态
-* 写回 2 条 miss 的 load 指令. 这些指令已经取得了 refill 的数据, 会与正常的访存流水线争用两个写回端口
+* Recibir 4 instrucciones del despacho
+* Recibir los resultados de 2 instrucciones del pipeline de carga para actualizar su estado interno
+* Recibir resultados de recarga fallida de dcache y actualizar el estado de todas las instrucciones en la cola de carga que están esperando esta recarga
+* Vuelva a escribir las dos instrucciones de carga que faltaban. Estas instrucciones ya obtuvieron los datos de recarga y competirán con el canal de acceso a la memoria normal por dos puertos de escritura diferida.
 
-一级数据缓存 refill 时，会将一整个 cacheline 的所有数据反馈给 load queue, 所有在 load queue 中等待这一 cacheline 数据的指令都会得到数据.
+Cuando se vuelve a llenar el caché de datos de primer nivel, todos los datos de una línea de caché completa se devolverán a la cola de carga, y todas las instrucciones que esperan los datos de esta línea de caché en la cola de carga obtendrán los datos.
 
-## Load Queue 每项的内容
+## Cargar el contenido de la cola de cada elemento
 
-Load Queue 每项包含以下的信息:
+Cada entrada de la cola de carga contiene la siguiente información:
 
-* 物理地址
-* 虚拟地址 (debug)
-* 重填数据项
-* 状态位
-* trigger 使用的状态位
+* Dirección física
+* Dirección virtual (depuración)
+* Recargar elementos de datos
+* Bits de estado
+* Bits de estado utilizados por el disparador
 
-状态位|说明
+Bits de estado | Descripción
 -|-
-allocated|该项已经被 dispatch 分配
-datavalid|load 指令已经拿到所需的数据
-writebacked|load 指令结果已经写回到寄存器堆并通知 ROB, RS
-miss|load 指令未命中 dcache, 正在等待 dcache refill
-pending|该 load 指令访问 mmio 地址空间, 执行被推迟. 正在等待指令成为 ROB 中最后一条指令
-released|load 指令访问的 cacheline 已经被 dcache 释放 (release)
-error|load 指令在执行过程中检测到错误
+asignado|El artículo ha sido asignado por envío
+El comando datavalid|load ha obtenido los datos requeridos
+El resultado de la instrucción writebacked|load se ha vuelto a escribir en el archivo de registro y se ha notificado a ROB, RS
+instrucción miss|load omitió dcache, esperando recarga de dcache
+pendiente|La instrucción de carga accede al espacio de direcciones mmio y se pospone la ejecución. Esperando a que la instrucción se convierta en la última instrucción en el ROB
+liberado|La línea de caché a la que accedió la instrucción de carga ha sido liberada por dcache (liberación)
+error|load Se detectó un error durante la ejecución de la instrucción
 
-## Load Queue Enqueue
+## Cargar cola Poner en cola
 
-load 指令进入 load queue 实际分两步完成: `enqPtr` 的提前分配和 load queue 的实际写入. 
+La instrucción de carga que ingresa a la cola de carga en realidad se completa en dos pasos: la asignación anticipada de `enqPtr` y la escritura real en la cola de carga.
 
-提前分配的原因是 dispatch 模块距离 MemBlock 太远, 将 load queue 处产生的 `enqPtr` 送到 dispatch 做为 `lqIdx` 需要面临很长的延迟. 南湖架构在 dispatch 附近维护 `enqPtr` 的提前分配逻辑, 由提前分配逻辑负责提供指令的 `lqIdx`.
+El motivo de la asignación temprana es que el módulo de despacho está demasiado lejos de MemBlock y el envío del `enqPtr` generado en la cola de carga al despacho como `lqIdx` enfrentará una demora prolongada. La arquitectura de Southlake mantiene la lógica de asignación temprana de `enqPtr` cerca del despacho. Es responsabilidad de la lógica de despacho temprana proporcionar el `lqIdx` de la instrucción.
 
-<!-- ### enqPtr 的提前分配
+<!-- ### Asignación anticipada de enqPtr
 
-!!! todo
-    参见 dispatch 部分, `lqIdx` / `sqIdx` 的[提前分配](../../backend/dispatch.md).  -->
+!!! hacer
+ Consulte la sección de despacho, [asignación anticipada](../../backend/dispatch.md) de `lqIdx` / `sqIdx`. -->
 
-### Load Queue 实际写入
+### Cola de carga Escritura real
 
-在 load queue 被实际写入时, load queue 本身的 `enqPtr` 会根据写入 load queue 的指令数量被更新. 出于时序考虑, load queue 只会在 load queue 中 `空项数 >= enq指令数` 的情况下接受 dispatch 分派的指令. 
+Cuando se escribe realmente la cola de carga, el `enqPtr` de la cola de carga se actualiza de acuerdo con la cantidad de instrucciones escritas en la cola de carga. Por razones de tiempo, la cola de carga solo se actualizará cuando la cantidad de elementos vacíos en la cola de carga sea mayor. La cola de carga es >= el número de instrucciones enq. ` acepta las instrucciones enviadas.
 
-## Update Load Queue
+## Actualizar cola de carga
 
-在一条指令在 load 流水线的执行过程中, 可以在多个阶段更新 load queue 的状态.  
+Durante la ejecución de una instrucción en la cadena de carga, el estado de la cola de carga se puede actualizar en varias etapas.
 
-### Load Stage 2
+### Etapa de carga 2
 
-在这一阶段, dcache 和前递返回结果, 并将以下内容写入到 load queue 中:
+En esta etapa, dcache y la recursión hacia adelante devuelven los resultados y escriben lo siguiente en la cola de carga:
 
-* 关键控制信号
-* 物理地址
-* 前递结果
-* trigger 检查结果
+* Señales de control clave
+* Dirección física
+* Resultados adelantados
+* resultado de la comprobación del disparador
 
-此时会被更新的状态标志位包括: `datavalid`, `writebacked`, `miss`, `pending`, `released`
+Los indicadores de estado que se actualizarán en este momento incluyen: `datavalid`, `writebacked`, `miss`, `pending`, `released`
 
-[MMIO](#mmio-uncached-访存) 与正常指令对 load queue 的更新方式不同.
+Las instrucciones MMIO actualizan la cola de carga de forma diferente a las instrucciones normales.
 
-### Load Stage 3
+### Etapa de carga 3
 
-在这一阶段, 部分上个周期来不及完成的检查返回结果, load queue 会使用这些结果来更新其状态. 例如 `dcacheRequireReplay` 事件(dcache 请求从指令从保留站中重发)一旦触发, 会将 `miss` 和 `datavalid` flag 更新为 false. 这标志着这条指令会从保留站重发, 而不是在 load queue 中等待 refill 将其唤醒. 这一操作与 load 指令流水线中 stage 3 的保留站反馈操作同步发生.
+Durante esta fase, algunas de las comprobaciones que no se completaron en el ciclo anterior devuelven resultados, y la cola de carga utilizará estos resultados para actualizar su estado. Por ejemplo, una vez que se produce el evento `dcacheRequireReplay` (dcache solicita que se vuelvan a enviar instrucciones desde el estación de reserva) se activa, los indicadores ` miss y datavalid se actualizan a falso. Esto indica que la instrucción se volverá a emitir desde la estación de reserva en lugar de esperar en la cola de carga a que se rellene para despertarla. Esta operación es coherente con la Retroalimentación de la estación de reserva en la etapa 3 del proceso de instrucciones de carga. Las operaciones se realizan de manera sincrónica.
 
-!!! info
-    load 流水线中 [load miss](../fu/load_pipeline.md#load-miss) 的处理部分也涉及了 load queue 更新的相关信息
+!!! información
+ El procesamiento de [error de carga](../fu/load_pipeline.md#load-miss) en la canalización de carga también involucra información relevante sobre las actualizaciones de la cola de carga.
 
-## Load Refill
+## Cargar recarga
 
-若一条 load 指令成功被分配 dcache MSHR, 后续其将在 load queue 中侦听 dcache refill 的结果. 一次 refill 会将数据传递到所有等待这一 cacheline 的 load queue 项. 这些项的数据状态被标识为有效, 随后可以被写回. 如果指令此前已经进行了 store 到 load 的前递, load queue 负责在 refill 时合并前递结果, 参见 [Store 到 Load 的前递](../mechanism.md#store-to-load-forward) 一节. 下面的示意图展示了一次 dcache refill 前后 load queue 中各项的变化. 
+Si se asigna correctamente una instrucción de carga a dcache MSHR, escuchará el resultado de la recarga de dcache en la cola de carga. Una recarga pasará los datos a todos los elementos de la cola de carga que esperan esta línea de caché. El estado de los datos de estos elementos se marca como válido, que luego se puede volver a escribir. Si la instrucción se ha reenviado de la tienda a la carga antes, la cola de carga es responsable de fusionar los resultados de reenvío al rellenar, consulte [Reenvío de la tienda a la carga](../mechanism.md#store - El siguiente diagrama muestra los cambios en los elementos de la cola de carga antes y después de una recarga de dcache.
 
 <!-- !!! todo
-    更新图的描述 -->
+ Se actualizó la descripción del diagrama -->
 
-![before-refill](../../figs/memblock/before-refill.png)  
+![antes de rellenar](../../figs/memblock/antes-de-rellenar.png)
 
-![after-refill](../../figs/memblock/after-refill.png)  
+![después del rellenado](../../figs/memblock/after-refill.png)
 
-在 load queue 拿到 dcache refill 回来的数据后, 就可以开始**从 load queue 写回 miss 的 load 指令**. load queue 为这种指令的写回操作提供了两个端口. 在每个周期, load queue 会分别从奇偶两列中选出最老的已经完成了 refill 但还没写回的指令, 在下一个周期将其通过写回端口写回(出于时序考虑, 写回指令的选择和实际写回放在了前后两个周期来执行). load queue 会和 load 流水线中正常执行的 load 指令争用写回端口. 当 load 流水线中的指令试图写回时, 来自 load queue 的写回请求被阻塞.
+Una vez que la cola de carga obtiene los datos de la recarga de caché de datos, puede comenzar a escribir las instrucciones de carga que faltan en la cola de carga. La cola de carga proporciona dos puertos para este tipo de operación de escritura diferida de instrucciones. En cada ciclo, la cola de carga selecciona la instrucción más antigua de las columnas pares e impares que ha completado la recarga pero que aún no se ha vuelto a escribir, y la vuelve a escribir a través del puerto de escritura diferida en el siguiente ciclo (por consideraciones de tiempo, la selección de instrucciones de escritura diferida y la escritura real) -back se ejecuta dos ciclos antes y después. La cola de carga competirá con las instrucciones de carga ejecutadas normalmente en la canalización de carga por el puerto de escritura diferida. Cuando las instrucciones en la canalización de carga intentan escribir diferidamente, la solicitud de escritura diferida de La cola de carga está bloqueada.
 
-## load 指令的完成
+## Finalización de la instrucción de carga
 
-load 指令的完成指 load 取得结果, 写回 rob 和 rf 的操作. 写回 ROB 和 RF 的 load 的选择分奇偶两部分进行, 较老的指令优先被选择. 每周期至多选出两条指令被写回. load queue 选择写回的指令有两种: 
+La finalización de la instrucción de carga se refiere a la operación de escribir el resultado de la carga de nuevo en rob y rf. La selección de la carga para escribir de nuevo en ROB y RF se divide en partes pares e impares, y la instrucción más antigua se selecciona primero. Se seleccionan dos instrucciones para escribir como máximo por ciclo. Hay dos instrucciones para seleccionar la escritura diferida en la cola de carga:
 
-* 已经完成的 mmio load 指令
-* 此前 miss, 现在已经从 dcache 取得 refill 回来的数据结果的 load 指令
+* Instrucciones de carga de mmio completadas
+* Anteriormente se omitió, ahora se utilizó la instrucción de carga para obtener el resultado de los datos rellenados desde dcache
 
-!!! info
-    正常命中 dcache 的 load 会直接从流水线写回. 参见 [load pipeline](../fu/load_pipeline.md#stage-2) 部分.
+!!!información
+ Las cargas normales que llegan a dcache se volverán a escribir directamente desde la canalización. Consulte la sección [canalización de carga](../fu/load_pipeline.md#stage-2).
 
-实际写回操作在写回选择的下一拍发生. load queue 会根据选择结果读出对应指令的信息, 根据指令要求完成结果裁剪, 最后争用 load 写回端口将结果写回. load 被成功写回后, `writebacked` flag 会被更新成 false.
+La operación de escritura diferida real se produce en el siguiente latido de la selección de escritura diferida. La cola de carga leerá la información de instrucción correspondiente según el resultado de la selección, completará el recorte del resultado según los requisitos de la instrucción y, finalmente, utilizará la operación de escritura diferida de carga. puerto de retorno para escribir el resultado. La carga se escribe correctamente. Una vez que se completa la escritura, el indicador `writebacked` se actualizará a falso.
 
-!!! note
-    注意区分 load 指令写回到 load queue 和 load 从 load queue 写回到 rob 和 rf. 两者是不同的操作.
+!!! nota
+ Tenga en cuenta la diferencia entre las instrucciones de carga que se vuelven a escribir en la cola de carga y las instrucciones de carga que se vuelven a escribir desde la cola de carga a rob y rf. Se trata de operaciones diferentes.
 
-## load 提交相关机制
+## Mecanismo relacionado con el envío de carga
 
-rob 在指令提交后, 根据 load 指令提交的数量产生 `lcommit` 信号, 通知 load queue 这些数量的 load 指令已经成功提交.
+Después de enviar el comando, rob genera una señal `lcommit` según la cantidad de comandos de carga enviados, notificando a la cola de carga que esta cantidad de comandos de carga se han enviado correctamente.
 
-由于 load queue 与 ROB 间隔较远. load queue 实际使用 `lcommit` 更新内部状态是在 ROB 处进行指令 commit 的两拍之后. load queue 会将已经 commit 的指令 `allocated` flag 更新为 false 以表示其完成. 同时根据提交的 load 的数量(`lcommit`) 更新队列尾指针 `deqPtr`.
+Dado que la cola de carga está lejos del ROB, la cola de carga en realidad usa `lcommit` para actualizar el estado interno dos tiempos después de que la instrucción se confirma en el ROB. La cola de carga actualizará el indicador `allocated` de la instrucción confirmada a falso para indicar su finalización. Al mismo tiempo, actualice el puntero de cola de la cola `deqPtr` según la cantidad de cargas enviadas (`lcommit`).
 
-## redirect
+## redirigir
 
-这一小节介绍 load queue 中与指令重定向相关的机制. 重定向到达 load queue 之后会在 2 拍内更新 load queue 的状态:
+En esta sección se presenta el mecanismo relacionado con la redirección de comandos en la cola de carga. Una vez que la redirección llega a la cola de carga, el estado de la cola de carga se actualizará en 2 segundos:
 
-* Cycle1: 根据 robIdx 找出所有错误路径上的指令. 被刷掉的指令 allocated 被设置成 false.
-* Cycle2: 根据上一拍查找的结果, 统计有多少指令需要被取消, 更新 enqPtr
+* Ciclo 1: busca todas las instrucciones en la ruta incorrecta según robIdx. La asignación de las instrucciones eliminadas se establece en falso.
+* Ciclo2: Según el resultado de la búsqueda anterior, cuente cuántas instrucciones deben cancelarse y actualice enqPtr
 
-在目前的设计下, 跳转指令触发重定向后, dispatch queue 中仍然可能有有效的 load 指令需要进入 load queue. 在 cycle2 进行 enqPtr 更新时, 在重定向更新 load queue 期间进入 load queue 的指令是否需要取消会被单独统计. 
+En el diseño actual, después de que la instrucción de salto activa la redirección, aún puede haber instrucciones de carga válidas en la cola de despacho que deben ingresar a la cola de carga. Cuando cycle2 realiza la actualización enqPtr, ¿se actualizan las instrucciones que ingresan a la cola de carga durante la redirección? Las cancelaciones se contabilizan aparte.
 
-<!-- TODO: Cycle2 指令 enq 的处理 -->
+<!-- TODO: Procesamiento de la instrucción del ciclo 2 enq -->
 
-<!-- ### 队列指针维护 -->
+<!-- ### Mantenimiento del puntero de cola -->
 
-## store - load 违例检查相关机制
+## tienda - mecanismo de verificación de violación de carga
 
-在 store addr 操作向 store queue 中写入地址的同时 (store addr pipeline stage 1), 它也会在 load queue 中搜索物理地址相同但程序序在 store 之后的 load 指令. 如果这些 load 指令已经被执行并产生了错误的结果(即触发 store - load 违例), 则 load queue 会发出重定向请求: 处理器会从这条 load 指令开始, 从取指开始重新执行后续的指令.
+Mientras la operación de almacenar dirección escribe la dirección en la cola de almacenamiento (etapa 1 de la canalización de almacenar dirección), también busca en la cola de carga instrucciones de carga con la misma dirección física pero en el orden posterior al almacenamiento. Si se han ejecutado estas instrucciones de carga y si se genera un resultado incorrecto (es decir, se activa una violación de carga de almacenamiento), la cola de carga emitirá una solicitud de redirección: el procesador comenzará desde esta instrucción de carga y volverá a ejecutar las instrucciones subsiguientes comenzando desde la búsqueda de instrucciones.
 
-对于两条 store 流水线, 每条指令要检查三个位置的 load 指令是否违例(load 流水线 stage 1 / stage 2, load queue), 共计有 6 个可能的违例会被检查出. 违例检查逻辑需要在 6 个可能的违例中选出最老的一个, 产生重定向请求传出. 为此, 对于每条 store 指令, 它的 store - load 违例检查被划分到三个周期执行, 每个周期执行的操作如下:
+Para dos canales de almacenamiento, cada instrucción debe verificar si las instrucciones de carga en tres ubicaciones están en violación (canal de carga etapa 1/etapa 2, cola de carga), y se verificará un total de 6 posibles violaciones. La lógica de verificación de violaciones debe Se selecciona la más antigua de las posibles violaciones y se genera una solicitud de redirección. Para ello, para cada instrucción de almacenamiento, su verificación de violación de carga de almacenamiento se divide en tres ciclos para su ejecución, y las operaciones realizadas en cada ciclo se como sigue :
 
-* Cycle 0: store addr 更新 store queue
-    * store 流水线将物理地址送入 load queue, 根据地址匹配生成匹配向量
-    * 根据 store 指令附带的 lqIdx 计算检查范围
-    * 检查 load 流水线 stage 1 / stage 2 中的指令是否用到这条 store 的结果 
-* Cycle 1: 重定向生成
-    * 完成 load queue 中的违例检查
-    * 如果此前 load 流水线 stage 1 / stage 2 中的指令发生了违例, 选出其中最老的一个
-* Cycle 2: 重定向生成
-    * 从所有的违例中选出最老的一个
-    * 生成重定向请求传出
+* Ciclo 0: la dirección de la tienda actualiza la cola de la tienda
+ * La tubería de la tienda envía la dirección física a la cola de carga y genera un vector coincidente basado en la coincidencia de la dirección.
+ * Calcule el rango de verificación en función del lqIdx proporcionado con la instrucción de almacenamiento
+ * Verificar si las instrucciones en la etapa 1 / etapa 2 del pipeline de carga utilizan el resultado de este almacenamiento
+* Ciclo 1: Generación de redireccionamiento
+ * Comprobación completa de violaciones en la cola de carga
+ * Si se produjo una infracción en la etapa 1/etapa 2 del pipeline de carga anterior, seleccione la más antigua
+* Ciclo 2: Generación de redireccionamiento
+ * Seleccione la infracción más antigua entre todas las infracciones
+ * Genera una solicitud de redireccionamiento saliente
 
 ```
- stage 0:        lq l1 l2     l1 l2 lq
-                 |  |  |      |  |  |  (paddr match)
- stage 1:        lq l1 l2     l1 l2 lq
-                 |  |  |      |  |  |
-                 |  |------------|  |
-                 |        |         |
- stage 2:        lq      l1l2       lq
-                 |        |         |
-                 --------------------
-                          |
-                      rollback req
-```
-
-**违例恢复.** 如果检查出存在违例, 且触发违例的指令尚未被其他来源的重定向请求取消, 则发出重定向请求, 并更新访存违例预测器. st-ld 违例发出的重定向请求**与分支预测错误的重定向请求处理方式相似**, 不需要等待指令到达 ROB 队尾才向前端发出重定向请求.
-
-## load - load 违例检查相关机制
-
-当 load 到达 load 流水线 stage 1 时, 会在 load queue 中查询 load queue 中具有相同物理地址的 load 指令. 如果后续的 load 指令返回了结果且已经被 release, 则重新执行后续的 load 指令, 以确保访问相同地址的 load 之间的顺序. 为了实现上述的检查, load queue 包含以下机制:
-
-* 在 dcache release 一个 cacheline 时, 更新 load queue 中对应项的 `released` flag, 标记这条 load 指令所在的 cacheline 已经被释放.
-* load 在执行时在 load queue 中检查之后的 load
-* 如果发现之后的 load 拿到了更老的结果 (即已经被 release), 从这条 load 开始重新执行
-
-<!-- ### release 更新 load queue 中的对应项 -->
-
-dcache 会向 load queue 发送 release 信号来标识 dcache 已经失去了对某一 cacheline 的读权限. dcache release 信号产生标志着 dcache 会将这一拍之后对相同 cacheline 的 load 全部标记为 miss, 直到 dcache 重新获得这一行的权限为止. dcache release 信号会在 dcache mainpipe 更新 dcache 内 cacheline 的状态位的同时产生. 参见 [dcache mainpipe](../dcache/main_pipe.md) 部分. 
-
-为时序考虑, dcache release 信号传递到 load queue 的过程加了拍, load queue 中 `released` flag 的更新实际在 dcache 写 meta 更新 cacheline 权限的两拍之后. dcache 和 huancun (l2 cache) 的设计保证了在 dcache release 信号产生后(意味着 dcache 放弃对一个 cacheline 的读权限)的至少 3 个周期之内, dcache 不会重新获得对对应行的读权限. 在此基础上, load - load 违例检查发生的时机有以下几种情况:
-
-![ldvio](../../figs/memblock/ldvio.png)
-
-dcache release 信号在更新 load queue 中 `released` 状态位时, 会与正常 load 流水线中的 load-load 违例检查争用 load paddr cam 端口. release 信号更新 load queue 有更高的优先级. 如果争用不到资源, 流水线中的 load 指令将立刻被从保留站重发.
-
-<!-- Future Work: 目前所有的 release 操作都会产生 dcache release 信号. 这里可以进行细化, TtoB 不需要产生 dcache release 信号 -->
-
-**违例恢复.** 触发 load-load 违例的 load 指令会被标记为需要从取指重新执行. 重定向请求会在这些指令到达 ROB 队尾时发出.
-
-## MMIO (uncached 访存)
-
-在地址检查阶段发生 exception 的 mmio 指令会在 Load Stage 2 立即将异常信息写回到 ROB 并更新 load queue. 这样的 mmio 指令不会进行 uncached 访存操作.
-
-不带 exception 的 mmio 指令会在 Load Stage 2 更新 load queue, 将 load queue 中的这条指令标记为等待执行的 mmio 指令. 但其不会将 ROB 中的指令标识为已写回的状态. 当这条指令到达 ROB 的队尾后, ROB 会通知 load queue, 由 load queue 向下发出 uncached 访存请求. uncached 访存请求由一个状态机维护. 在 uncached 访存完成之后, mmio load 如同 miss 的 load 一样, 将数据从 load queue 写回.
+ etapa 0: lq l1 l2 l1 l2 lq
+ | | | | | | (coincidencia de paddr)
+ Etapa 1: lq l1 l2 l1 l2 lq
+ | | | | | |
+ | |------------| |
+ | |
