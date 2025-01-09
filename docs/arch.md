@@ -1,7 +1,7 @@
-# 香山处理器整体架构设计
+# Xiangshan processor overall architecture design
 
-香山处理器是乱序六发射结构设计，目前支持 RV64GCBK 扩展（具体指令集字符串为 `RV64IMAFDC_zba_zbb_zbc_zbs_zbkb_zbkc_zbkx_zknd_zkne_zknh_zksed_zksh_svinval_zicbom_zicboz` ）。香山处理器前端流水线包括分支预测单元、取指单元、指令缓冲等单元，顺序取指。后端包括译码、重命名、重定序缓冲、保留站、整型/浮点寄存器堆、整型/浮点运算单元。我们将访存子系统分离开，包括两条 load 流水线，两条 store addr 流水线，两条 store data 流水线，以及独立的 load 队列和 store 队列，store buffer 等。缓存包括 ICache、DCache、L2/L3 Cache (HuanCun)、TLB 和预取器等模块。各部分在流水线中的位置以及参数配置可以从下图中获得。
+The Xiangshan processor is a six-issue out-of-order structure design, currently supporting the RV64GCBK extension (the specific instruction set string is `RV64IMAFDC_zba_zbb_zbc_zbs_zbkb_zbkc_zbkx_zknd_zkne_zknh_zksed_zksh_svinval_zicbom_zicboz`). The front-end pipeline of the Xiangshan processor includes branch prediction unit, instruction fetch unit, instruction buffer and other units, and sequential instruction fetch. The back-end includes decoding, renaming, reordering buffer, reservation station, integer/floating-point register file, integer/floating-point operation unit. We separated the memory access subsystem, including two load pipelines, two store addr pipelines, two store data pipelines, and independent load queues and store queues, store buffers, etc. The cache includes ICache, DCache, L2/L3 Cache (HuanCun), TLB and prefetcher modules. The position of each part in the pipeline and the parameter configuration can be obtained from the figure below.
 
-![香山架构图](./figs/nanhu.png)
+![Xiangshan Architecture Diagram](./figs/nanhu.png)
 
-具体结构设计详见对应章节的介绍。
+For detailed structural design, please refer to the introduction of the corresponding chapter.
