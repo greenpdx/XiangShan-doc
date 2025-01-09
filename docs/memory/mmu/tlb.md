@@ -1,39 +1,39 @@
-# 一级 TLB
+# Nivel 1 TLB
 
-## 基础介绍
+## Introducción básica
 
-TLB（Translation Lookaside Buffer）负责进行地址翻译。
-香山支持手册中规定的 Sv39 模式，暂不支持其他几种模式。虚拟地址长度为 39 位，物理地址长度为 36 位，可参数化修改。
-虚存是否开启由当前特权级（如M mode 或 S Mode等）和 Satp 寄存器等共同决定，这一判断在 TLB 内部完成，对 TLB 外透明，因此在 TLB 外的模块看来，所有的地址都经过的 TLB 的地址转换。
+TLB (Translation Lookaside Buffer) es responsable de la traducción de direcciones.
+Xiangshan admite el modo Sv39 especificado en el manual, pero actualmente no admite otros modos. La longitud de la dirección virtual es de 39 bits y la longitud de la dirección física es de 36 bits, que se pueden modificar mediante parámetros.
+La habilitación de la memoria virtual depende del nivel de privilegio actual (como el modo M o el modo S) y del registro Satp. Esta determinación se realiza dentro de la TLB y es transparente para el exterior de la misma. Por lo tanto, desde la perspectiva de los módulos Fuera de la TLB, todas las direcciones se traducen mediante la TLB.
 
-## 组织形式
+## Forma organizativa
 
-核内进行访存之前，包括前端取指和后端访存两部分，都需要由 TLB 进行地址翻译。因物理距离较远，并且为了避免相互污染，前端的 ITLB（instruction TLB）和后端访存的 DTLB（Data TLB）是两个的 TLB。ITLB 采用全相联模式，32 项普通页（NormalPage）负责 4KB 页，8 项大页（SuperPage）负责 2MB 和 1GB 的地址转换。DTLB 采用混合模式，64 项普通页直接相联负责 4KB 页，16 项大页全相联负责全部大小的页，采用伪 LRU 替换策略。普通页部分提供容量，但灵活性低，易冲突；大页部分灵活性强，但容量小。因此将普通页部分作为大页部分的 Victim，回填时，先回填大页部分，大页部分驱逐的项写到普通页部分（仅限 4KB 页）。
+Antes de acceder a la memoria dentro del núcleo, tanto la obtención de instrucciones del front-end como el acceso a la memoria del back-end deben ser traducidos por el TLB. Debido a la gran distancia física y para evitar la contaminación mutua, la ITLB de front-end (TLB de instrucciones) y la DTLB de acceso a memoria de back-end (TLB de datos) son dos TLB. ITLB utiliza un modo totalmente asociativo, con 32 páginas normales (NormalPage) responsables de páginas de 4 KB y 8 páginas grandes (SuperPage) responsables de la traducción de direcciones de 2 MB y 1 GB. DTLB adopta un modo híbrido, con 64 páginas normales directamente asociadas para ser responsables de páginas de 4 KB y 16 páginas grandes totalmente asociadas para ser responsables de páginas de todos los tamaños, utilizando una estrategia de reemplazo pseudo LRU. La parte de página normal proporciona capacidad, pero tiene poca flexibilidad y es propensa a conflictos; la parte de página grande tiene alta flexibilidad pero poca capacidad. Por lo tanto, la parte de página normal se utiliza como víctima de la parte de página grande. Al rellenar, la parte de página grande se rellena primero y los elementos expulsados ​​de la parte de página grande se escriben en la parte de página normal (solo páginas de 4 KB).
 
-访存拥有 2 个 Load 流水线，2 个 Store 流水线，为了时序考虑，它们需要一个单独的 TLB。同时为了性能考虑，这些 TLB 的内容需要保持一致，类似于相互预取。因此，这 4 个 DTLB 采用“外置”的替换算法模块，以保证内容的一致。
+El acceso a la memoria tiene dos canales de carga y dos canales de almacenamiento y, por cuestiones de tiempo, requieren una TLB independiente. Al mismo tiempo, por razones de rendimiento, el contenido de estas TLB debe permanecer consistente, de manera similar a la precarga mutua. Por lo tanto, estos cuatro DTLB utilizan un módulo de algoritmo de reemplazo “externo” para garantizar la consistencia del contenido.
 
-## 阻塞与非阻塞
+## Bloqueo y no bloqueo
 
-前端取指对 ITLB 的需求为阻塞式访问，即当 TLB miss 时，TLB 不立即返回 miss 结果，而是进行 Page Table Walk 取回页表项后返回。
-而后端访存对 DTLB 的需求为非阻塞式访问，即当 TLB miss 时，TLB 也需要立即返回结果，无论是 miss 还是 hit。
-Yanqihu 架构和 Nanhu 架构中，TLB本体为非阻塞式访问，前端取指的阻塞式访问由前端模块完成 replay，TLB 不存储请求的信息。
+La búsqueda de instrucciones del front-end requiere bloquear el acceso a la ITLB, es decir, cuando la TLB falla, esta no devuelve inmediatamente el resultado de la falla, sino que realiza un recorrido de tabla de páginas para recuperar la entrada de la tabla de páginas y luego regresa.
+El acceso a la memoria del back-end requiere acceso sin bloqueo al DTLB, es decir, cuando el TLB falla, el TLB también debe devolver el resultado inmediatamente, ya sea un error o un acierto.
+En la arquitectura Yanqihu y la arquitectura Nanhu, el cuerpo de la TLB es un acceso sin bloqueo, el acceso de bloqueo de la búsqueda de instrucciones del front-end es reproducido por el módulo front-end y la TLB no almacena la información solicitada.
 
-新版架构预告：TLB 可以对每个请求端口的阻塞形式进行参数化配置，静态选择阻塞还是非阻塞，一个模块可以同时适应前后端的需求。
+Vista previa de nueva arquitectura: TLB puede parametrizar la forma de bloqueo de cada puerto de solicitud, seleccionar estáticamente bloqueo o no bloqueo, y un módulo puede adaptarse a las necesidades tanto del front-end como del back-end.
 
-## Sfence.vma 与 ASID
+## Sfence.vma y ASID
 
-Sfence.vma 指令执行时，会先清空 Store Buffer 的全部内容（写回到 DCache 中），之后发出刷新信号到 MMU 的各个部分。刷新信号是单向的，只会持续一拍，没有返回信号。指令最后会刷新整个流水线，从取指开始重新执行。
-Sfence.vma会取消所有 inflight 的请求，包括 Repeater 和 Filter，以及 L2 TLB中的 inflight 请求，并且根据地址和 ASID 刷新 TLB 和 L2TLB 中的缓存的页表。
-全相联部分根据是否命中进行刷新，组相联（直接相联）部分，根据 index 直接刷新。
+Cuando se ejecuta la instrucción Sfence.vma, se borra todo el contenido del búfer de almacenamiento (se vuelve a escribir en DCache) y luego se envía una señal de actualización a varias partes de la MMU. La señal de actualización es unidireccional y solo dura un tiempo, sin señal de retorno. La instrucción finalmente actualizará todo el pipeline y lo volverá a ejecutar desde la búsqueda de instrucciones.
+Sfence.vma cancela todas las solicitudes en vuelo, incluidas las de repetidor y filtro, así como las solicitudes en vuelo en L2 TLB, y actualiza las tablas de páginas en caché en TLB y L2TLB según la dirección y el ASID.
+La parte totalmente asociativa se actualiza en función de si se golpea o no, y la parte asociativa del grupo (directamente asociativa) se actualiza directamente en función del índice.
 
-Yanqihu 架构不支持 ASID（Address Space IDentifier），Nanhu 架构添加了对 ASID 的支持，长度为16，可以参数化配置。
-所有 inflight 请求都不携带 ASID 信息，这源于以下几个方面：
+La arquitectura Yanqihu no admite ASID (identificador de espacio de direcciones). La arquitectura Nanhu añade compatibilidad con ASID, que tiene una longitud de 16 y se puede parametrizar.
+No todas las solicitudes durante el vuelo contienen información ASID. Esto se debe a las siguientes razones:
 
-1. 一般情况下，inflight 请求的 ASID 都与 Satp 的 ASID 域相同
-2. 切换 ASID 时，inflight 请求都是“推测”访问的，是近似“无用”的
+1. Generalmente, el ASID de la solicitud en vuelo es el mismo que el campo ASID de Satp
+2. Al cambiar de ASID, las solicitudes en curso son todas accesos "especulativos", que son casi "inútiles".
 
-综合这两个原因，当切换 ASID 时，也将所有的 inflight 全部取消，并且 inflight 不必携带 ASID 信息。
+Combinando estas dos razones, al cambiar el ASID, todos los vuelos a bordo también se cancelan y el vuelo no necesita llevar información del ASID.
 
-## 更新 A/D 位
+## Actualizar bits A/D
 
-根据手册，页表的 A（Access）和 D（Dirty）位将会需要更新，香山采用报 page fault 例外的方法，由软件进行更新。
+Según el manual, será necesario actualizar los bits A (Acceso) y D (Sucio) de la tabla de páginas. Xiangshan utiliza el método de informar una excepción de error de página y los actualiza mediante software.
