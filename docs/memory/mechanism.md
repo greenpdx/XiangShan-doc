@@ -1,108 +1,109 @@
-# 乱序访存机制
+# Out-of-order memory access mechanism
 
-这一章介绍香山处理器中实现乱序访存的关键机制.
+This chapter introduces the key mechanism for implementing out-of-order memory access in the Xiangshan processor.
 
 ## Load Hit
 
-在一条 load 指令命中时, 这条 load 指令从保留站中发出后会经历 3 个 stage:
+When a load instruction hits, the load instruction will go through 3 stages after being issued from the reservation station:
 
-* Stage 0: 计算地址, 读 TLB, 读 dcache tag
-* Stage 1: 读 dcache data
-* Stage 2: 获得读结果，选择并写回
+* Stage 0: Calculate address, read TLB, read dcache tag
 
-在 stage 2 之后, 还会有一个额外的 stage 处理 stage 2 来不及完成的状态的更新. 关于各个阶段执行操作的细节, 参见 [load 流水线](./fu/load_pipeline.md) 的详细介绍.
+* Stage 1: Read dcache data
+
+* Stage 2: Get read result, select and write back
+
+After stage 2, there will be an additional stage to handle the status update that stage 2 did not have time to complete. For details on the operations performed at each stage, see the detailed introduction of [load pipeline](./fu/load_pipeline.md).
 
 ## Sta and Std
 
-store 指令的 address 计算部分在从保留站中发出后会经历 4 个 stage, 详细参见 [sta 流水线](./fu/store_pipeline.md#Sta-Pipeline):
+The address calculation part of the store instruction will go through 4 stages after being issued from the reservation station. For details, see [sta pipeline](./fu/store_pipeline.md#Sta-Pipeline):
 
-* Stage 0: 计算地址, 读 TLB
-* Stage 1: addr 和其他控制信息写入 store queue, 开始违例检查
-* Stage 2: 违例检查
-* Stage 3: 违例检查, 允许 store 指令提交
+* Stage 0: Calculate address, Read TLB
+* Stage 1: addr and other control information are written to the store queue, and violation checking begins
+* Stage 2: Violation checking
+* Stage 3: Violation checking, allowing store instructions to be submitted
 
-store 指令的 data 计算部分在从保留站中发射后, 会直接从保留站中将数据搬运到 store queue, 参见 [std 流水线](./fu/store_pipeline.md#Std-Pipeline).
+After the data calculation part of the store instruction is emitted from the reservation station, the data will be directly moved from the reservation station to the store queue, see [std pipeline](./fu/store_pipeline.md#Std-Pipeline).
 
-各个阶段执行操作的细节, 参见 [load 流水线](./fu/load_pipeline.md) 的详细介绍.
+For details on the operations performed at each stage, see the detailed introduction of [load pipeline](./fu/load_pipeline.md).
 
-## Load Miss 的处理
+## Load Miss processing
 
-参见 [Load Miss](./fu/load_pipeline.md#Load-Miss).
+See [Load Miss](./fu/load_pipeline.md#Load-Miss).
 
 ## Replay From RS
 
-这一节介绍 load 指令和 sta 操作从保留站重发(replay)的机制.
+This section introduces the mechanism of replaying load instructions and sta operations from the reservation station.
 
-以 load 指令为例. 在一些事件发生时, 我们将从保留站中重发这些 load 指令:
+Take the load instruction as an example. When some events occur, we will replay these loads from the reservation station. Instructions:
 
 * TLB miss
 * L1 DCache MSHR full
 * DCache bank conflict
-* 前递时发现地址匹配但数据未就绪 (Data invalid)
+* Address match found during forward pass but data not ready (Data invalid)
 
-这些事件的共同特点是:
+The common characteristics of these events are:
 
-* 发生频率不高(相比于正常的访存指令)
-* 这些事件发生时访存指令无法正常执行 
-* 在一段时间后再执行相同的访存指令, 这些事件不会发生
-    * 例如, TLB miss 事件会在 PTW 完成 TLB 重填之后消失
+* Low frequency of occurrence (compared to normal memory access instructions)
+* Memory access instructions cannot be executed normally when these events occur
+* These events will not occur when the same memory access instruction is executed again after a period of time
+* For example, TLB miss events will disappear after PTW completes TLB refill
 
-从保留站重发机制的作用是让这些指令在保留栈中稍作等待, 在一定的周期之后重新执行. 这一机制的实现如下: 一条指令从访存 RS 中发射之后仍然需要保留在 RS 中, 访存指令在离开流水线时向 RS 反馈是否需要从保留站重发. 需要从保留站重发的指令会在 RS 中继续等待在一定时间间隔之后重新发射.
+The purpose of the reissue mechanism from the reservation station is to let these instructions wait for a while in the reservation stack and re-execute after a certain cycle. This mechanism is implemented as follows: After an instruction is issued from the memory access RS, it still needs to be retained in the RS. When the memory access instruction leaves the pipeline, it will feedback to the RS whether it needs to be reissued from the reservation station. The instructions that need to be reissued from the reservation station will continue to wait in the RS and re-issue after a certain time interval.
 
-目前, load 流水线中有两个向保留站反馈是否需要重发指令的端口. 这两个端口分别位于 load stage 1 (`feedbackFast`) 和 load stage 3 (`feedbackSlow`) . 在 load stage 0 和 load stage 1 可以被检查出的需要重发的指令会通过 load stage 1 的 `feedbackFast` 端口将重发请求反馈到保留站. 在 load stage 2 才能被检查出的重发请求将在 load stage 3 的 `feedbackSlow` 端口反馈到保留站. 两个端口的设计是为了让保留站能更早地重发一些需要重发的指令.
-    
-在 `feedbackFast` 端口产生重发请求后, 对应的指令不会在流水线里继续流动. 亦即, `feedbackSlow` 端口不会产生这条指令的反馈.
+Currently, there are two ports in the load pipeline that feedback to the reservation station whether the instruction needs to be reissued. These two ports are located in the load stage 1 (`feedbackFast`) and load stage 3 (`feedbackSlow`). Instructions that can be detected in load stage 0 and load stage 1 will feedback the reissue request to the reservation station through the `feedbackFast` port of load stage 1. Reissue requests that can only be detected in load stage 2 will be fed back to the reservation station through the `feedbackSlow` port of load stage 3. The design of the two ports is to allow the reservation station to reissue some instructions that need to be reissued earlier.
 
-store addr (sta) 流水线只设置了一个反馈端口. 在 store stage 1, store 流水线就会向保留站报告是否需要重发这条指令.
+After the `feedbackFast` port generates a reissue request, the corresponding instruction will not continue to flow in the pipeline. That is, the `feedbackSlow` port will not generate feedback for this instruction.
 
-除了是否要进行指令重发的信息, 重发反馈端口还包括以下信息：
+The store addr (sta) pipeline only sets one feedback port. At store stage 1, the store pipeline will report to the reservation station whether the instruction needs to be reissued.
 
-* 使用保留站 index（rsIdx）索引要重发的指令在保留站中的位置
-* 使用 sourceType 域区分不同的重发原因
-* 为 load 发现之前的 store 地址就绪但数据未就绪的情况, 提供了反馈这条 store sqIdx 的接口
+In addition to the information on whether to reissue the instruction, the reissue feedback port also includes the following information:
+
+* Use reservation station index (rsIdx) indexes the position of the instruction to be reissued in the reservation station
+* Use the sourceType field to distinguish different reissue reasons
+* Provides an interface for feedback of this store sqIdx when the load finds that the previous store address is ready but the data is not ready
 
 !!! note
-    这一机制可能在下一版设计中发生变动.
+This mechanism may change in the next version of the design.
 
 ## Store To Load Forward
 
-Store 到 Load 的前递 (Store To Load Forward, STLF) 是指在 store 指令的数据被写入到数据缓存之前, 后续访问相同地址 load 指令从核内的访存队列和缓冲区获得这条 store 指令数据的操作.
+Store to Load Forward (STLF) refers to the operation that the subsequent load instruction that accesses the same address obtains the data of this store instruction from the memory access queue and buffer in the core before the data of the store instruction is written to the data cache.
 
-store 到 load 的前递操作被分配到三级流水执行. 在前递操作期间前递逻辑会并行检查 committed store buffer 和 store queue 中是否存在当前 load 需要的数据. 如果存在，则将这些数据合并到这一次 load 的结果中. 
+The forward operation of store to load is assigned to the three-stage pipeline execution. During the forward operation, the forward logic will check in parallel whether there is data required by the current load in the committed store buffer and store queue. If so, the data will be merged into the result of this load.
 
-### 虚地址前递
+### Virtual address forward
 
-为了时序考虑，南湖架构使用虚地址前递，实地址检查的机制. 这个机制通过将 TLB 查询从数据前递的数据通路上移除出去(但在控制通路上仍保留)的方式, 优化 store to load forward 的时序表现.
+For timing considerations, the Nanhu architecture uses a virtual address forward and real address check mechanism. This mechanism is achieved by placing the TLB The query is removed from the data path of data forwarding (but still retained in the control path) to optimize the timing performance of store to load forward.
 
 <!-- !!! todo -->
-<!-- 基本思路, 图 -->
+<!-- Basic idea, diagram -->
 
-**虚地址前递的数据通路:** [load 流水线](../memory/fu/load_pipeline.md)的 stage 0 会根据指令的 sqIdx，生成数据前递所使用的 mask. 在 load 流水线的 stage 1，虚拟地址和 mask 被发送到 [store queue](../memory/lsq/store_queue.md#store-to-load-forward-query) 和 [committed store buffer](../memory/lsq/committed_store_buffer.md#store-to-load-forward-query) 进行前递查询. 在 load 流水线的 stage 2，store queue 和 committed store buffer 产生前递查询结果，这些结果会和 dcache 读出的结果合并. 
+**Data path for virtual address forwarding:** Stage 0 of the [load pipeline](../memory/fu/load_pipeline.md) generates the mask used for data forwarding according to the sqIdx of the instruction. In stage 1 of the load pipeline, the virtual address and mask are sent to the [store queue](../memory/lsq/store_queue.md#store-to-load-forward-query) and [committed store buffer](../memory/lsq/committed_store_buffer.md#store-to-load-forward-query) for forward query. In stage 2 of the load pipeline, the store queue and committed store buffer Generate forward query results, which will be merged with the results read from dcache.
 
-**虚地址前递的控制通路:** 在 load 流水线的 stage 0, 指令的虚拟地址被送入 TLB 开始进行虚实地址转换. 在 load 流水线的 stage 1, TLB 反馈回指令的物理地址. 物理地址和 mask 被发送到 [store queue](../memory/lsq/store_queue.md#store-to-load-forward-query) 和 [committed store buffer](../memory/lsq/committed_store_buffer.md#store-to-load-forward-query) 进行前递查询(只做地址匹配). 在 load stage 2, 虚地址的匹配结果和实地址的匹配结果将被比较, 一旦两者不同, 则说明虚地址前递发生了错误. [检查发现错误后，触发回滚并刷新 committed store buffer](../fu/load_pipeline.md#forward-failure). 这样的操作会将引发错误的虚地址从 store queue 和 committed store buffer 中排除出去.
+**Control path for virtual address forward pass:** In stage 0 of the load pipeline, the virtual address of the instruction is sent to the TLB to start the virtual-to-real address conversion. In stage 1 of the load pipeline, the TLB feeds back the physical address of the instruction. The physical address and mask are sent to the [store queue](../memory/lsq/store_queue.md#store-to-load-forward-query) and [committed store buffer](../memory/lsq/committed_store_buffer.md#store-to-load-forward-query) for forward query (address matching only). In load stage 2, the matching result of the virtual address and the matching result of the real address will be compared. Once the two are different, it means that an error has occurred in the virtual address forward pass. [After checking for errors, trigger rollback and refresh the committed store buffer](../fu/load_pipeline.md#forward-failure). Such an operation will exclude the virtual address that caused the error from the store queue and committed store buffer.
 
 !!! info
-    作为对比，雁栖湖架构实地址前递的流程如下： load 流水线的 stage 0 会根据指令的 sqIdx，生成数据前递所使用的 mask. 在 load 流水线的 stage 1，TLB 反馈回物理地址，此物理地址和 mask 被发送到 store queue 和 committed store buffer 进行前递查询. 在 load 流水线的 stage 2，store queue 和 committed store buffer 产生前递查询结果，这些结果会和 dcache 读出的结果合并. 控制和数据通路均遵循这一流程. 
+In contrast, the process of real address forward delivery in Yanqi Lake architecture is as follows: stage 0 of the load pipeline will generate the mask used for data forward delivery according to the sqIdx of the instruction. In stage 1 of the load pipeline, the TLB feeds back the physical address, and this physical address and mask are sent to the store queue and committed store buffer for forward query. In stage 2 of the load pipeline, the store queue and committed store buffer generate forward query results, which are merged with the results read from the dcache. Both the control and data paths follow this process.
 
-### 前递结果的保存
+### Preservation of forward results
 
-如果 DCache miss, 保留 forward 结果.  Forward 的结果（mask 和 data）会被写入到 load queue 中. 后续 dcache refill 结果时，load queue 会负责合并 refill 上来的数据和 forward 的结果，最终生成完整的 load 结果. 
+If DCache misses, keep the forward results. The forward results (mask and data) will be written to the load queue. When the dcache refills the results later, the load queue will be responsible for merging the refills The data from the previous instruction and the result of the forward instruction are combined to generate a complete load result.
 
-### 前递相关的性能优化
+### Performance optimization related to forward delivery
 
-dcache miss 但前递完全命中时, 可以不等待 dcache 返回数据, 直接写回这条指令的结果. 但是, 出于时序考虑(来不及将这种指令标成命中状态). 南湖架构将这种情况交给 load queue 处理. 这样的指令在更新 load queue 时会直接设置 `datavalid` flag (表明 load 数据有效). 由此, load queue 会立刻发现这样的指令不需要等待 dcache refill 的结果. 这样的指令可以被直接选取并写回.
+When the dcache misses but the forward delivery is completely hit, the result of this instruction can be written back directly without waiting for the dcache to return the data. However, due to timing considerations (there is no time to mark this instruction as a hit state), the Nanhu architecture leaves this situation to the load queue. Such instructions will directly set the `datavalid` flag (indicating that the load data is valid) when updating the load queue. As a result, the load queue will immediately find that such instructions do not need to wait for the result of the dcache refill. Such instructions can be directly selected and written back.
 
-## Store Load Violation 
+## Store Load Violation
 
-这一小节介绍 store-load 违例的检查和恢复. 在 store 指令到达 stage 1 时开始进行 load 违例检查. 如果在检查过程中发现了 load 违例, 则触发 load 违例的 store 不会在 ROB 中被标记为*可以提交*的状态. 同时, 回滚操作会立刻被触发, 无需等待触发 load 违例的 store 指令提交. load queue 一节介绍了 [检查和重定向的详细流程](../memory/lsq/load_queue.md#store---load-%E8%BF%9D%E4%BE%8B%E6%A3%80%E6%9F%A5%E7%9B%B8%E5%85%B3%E6%9C%BA%E5%88%B6).
+This section introduces the check and recovery of store-load violations. The load violation check begins when the store instruction reaches stage 1. If a load violation is found during the check, the store that triggered the load violation will not be marked as *committable* in the ROB. At the same time, the rollback operation will be triggered immediately without waiting for the triggering load Violated store instruction submission. The load queue section introduces the [detailed process of checking and redirecting](../memory/lsq/load_queue.md#store---load-%E8%BF%9D%E4%BE%8B%E6%A3%80%E6%9F%A5%E7%9B%B8%E5%85%B3%E6%9C%BA%E5%88%B6).
 
 ## Load Load Violation
 
-参见 [load-load 违例检查和恢复](../memory/lsq/load_queue.md#load---load-%E8%BF%9D%E4%BE%8B%E6%A3%80%E6%9F%A5%E7%9B%B8%E5%85%B3%E6%9C%BA%E5%88%B6)
+See [load-load violation check and recovery](../memory/lsq/load_queue.md#load---load-%E8%BF%9D%E4%BE%8B%E6%A3%80%E6%9F%A5%E7%9B%B8%E5%85%B3%E6%9C%BA%E5%88%B6)
 
-## load 写回端口的争用
+## load Contention of write-back ports
 
-南湖架构提供了两个 load 写回端口. 这个端口负责将 load 的结果写回到保留站，寄存器堆，并通知 ROB 指令已经完成执行. load 流水线的 stage 2 和 load queue 都可以使用这个端口写回结果. 两者会争抢这一端口的使用权. 
+The Southlake architecture provides two load write-back ports. This port is responsible for writing the result of the load back to the reservation station, register stack, and notifying the ROB that the instruction has been executed. Both stage 2 of the load pipeline and the load queue can use this port to write back the result. Both will compete for the right to use this port.
 
-正常情况下，流水线中的 load 指令拥有更高的优先级. 
-
+Under normal circumstances, the load instruction in the pipeline has a higher priority.
