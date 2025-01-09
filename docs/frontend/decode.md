@@ -1,11 +1,11 @@
-# 译码单元 (Decode Unit)
-## 基本功能
-指令从指令缓存中取出，送进指令缓冲（队列）中暂存，然后以每周期 6 条的的速度送入译码单元译码，再传给下一个流水级。
+# Decode Unit
+## Basic Function
+Instructions are taken from the instruction cache, sent to the instruction buffer (queue) for temporary storage, and then sent to the decode unit for decoding at a rate of 6 per cycle, and then passed to the next pipeline stage.
 
-## 指令融合 (Instruction Fusion)
-译码单元支持了一些指令的融合，在 `FusionDecoder` 模块中会基于连续两条指令的 32bit 数据完成指令融合。对非连续的两条指令，目前香山没有支持指令融合。
+## Instruction Fusion
+The decode unit supports the fusion of some instructions. In the `FusionDecoder` module, instruction fusion is completed based on the 32-bit data of two consecutive instructions. For two non-consecutive instructions, Xiangshan currently does not support instruction fusion.
 
-目前，香山支持如下情况的指令融合：
+Currently, Xiangshan supports the following instruction fusion:
 
 * clear upper 32 bits / get lower 32 bits: `slli r1, r0, 32` + `srli r1, r1, 32`
 * clear upper 48 bits / get lower 16 bits: `slli r1, r0, 48` + `srli r1, r1, 48`
