@@ -4,7 +4,7 @@ It is worth noting that these are typical configurations, and users can also spe
 
 ## Clock and Reset Clock and Reset
 
-NANHU has two clock domains:<br>NANHU has two clock domains:
+NANHU has two clock domains:
 
 * One clock domain for the cpu core (`io_clock`). All clock in CPU core is `io_clock`.
 
