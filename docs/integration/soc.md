@@ -1,19 +1,17 @@
 # Integración SoC<br>Integración del sistema en chip
 
 Esta sección describe los detalles funcionales de las interfaces de nivel superior de NANHU.
-Vale la pena señalar que estas son las configuraciones típicas y el usuario puede especificar diferentes parámetros de arquitectura.<br>Este capítulo presenta los detalles funcionales de la interfaz de nivel superior de Southlake.
-Vale la pena señalar que estas son configuraciones típicas y los usuarios pueden especificar diferentes parámetros de arquitectura.
+Vale la pena señalar que estas son las configuraciones típicas y el usuario puede especificar diferentes parámetros de arquitectura.
 
 ## Reloj y reinicio Reloj y reinicio
 
 NANHU tiene dos dominios de reloj:
 
-* Un dominio de reloj para el núcleo de la CPU (`io_clock`). Todo el reloj del núcleo de la CPU es `io_clock`.<br>Dominio de reloj del núcleo del procesador (`io_clock`). Todos los relojes en el núcleo del procesador son `io_clock`.
+* Un dominio de reloj para el núcleo de la CPU (`io_clock`). Todo el reloj del núcleo de la CPU es `io_clock`.
 
-* Un dominio de reloj para jtag (`io_systemjtag_jtag_TCK`).<br>Dominio de reloj JTAG (`io_systemjtag_jtag_TCK`).
+* Un dominio de reloj para jtag (`io_systemjtag_jtag_TCK`).
 
 NANHU tiene las siguientes señales de reinicio.
-Todas las señales de reinicio son reinicios asincrónicos.<br>Southlake tiene las siguientes señales de reinicio.
 Todas las señales de reinicio son reinicios asincrónicos.
 
 * `io_reset` está sincronizado internamente con el reloj `io_clock`. Activo alto.d<br>`io_reset` está sincronizado internamente con el reloj `io_clock`. El nivel alto es válido.
