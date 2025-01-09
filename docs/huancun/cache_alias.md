@@ -1,11 +1,11 @@
-# Cache 别名问题
+# Problema de alias de caché
 
-由于在 NanHu 架构中，DCache 和 ICache 都是采用 128KB 的 8 路组相联结构，cache 索引和块偏移所占 bit 数已经超过了页偏移 (4K 页的页偏移为 12 bits)，由此引入了 cache 别名问题：当两个虚页映射到同一个物理页时，两个虚页的别名位 (alias bits) 很有可能是不一样的，如果不做额外处理的话，通过VIPT索引 (Virtual Index Physical Tag) 后这两个虚页会位于 cache 不同的 set，导致归属于同一物理页的物理块在 cache 中缓存了两份，造成一些一致性错误。
+En la arquitectura NanHu, tanto DCache como ICache utilizan una estructura asociativa de 8 vías de 128 KB, y la cantidad de bits ocupados por el índice de caché y el desplazamiento de bloque supera el desplazamiento de página (el desplazamiento de página de una página de 4 K es de 12 bits). Esto introduce la caché Problema de alias: cuando dos páginas virtuales se asignan a la misma página física, es probable que los bits de alias de las dos páginas virtuales sean diferentes. Si no se realiza ningún procesamiento adicional, el índice VIPT (después de agregar la etiqueta física del índice virtual) Las páginas virtuales se ubicarán en diferentes conjuntos de la memoria caché, lo que provocará que dos copias del bloque físico perteneciente a la misma página física se almacenen en la memoria caché, lo que provoca algunos errores de coherencia.
 
 ![](../figs/huancun_cache_alias-1.jpg)
 
-为了让 L1 Cache 继续沿用 VIPT，XiangShan 的缓存系统采用硬件方式解决 cache 别名问题。具体的解决方式是由 L2 Cache 保证一个物理块在上层的一个 VIPT cache 中最多只有一种别名位。
+Para permitir que L1 Cache continúe usando VIPT, el sistema de caché de XiangShan utiliza hardware para resolver el problema de alias de caché. La solución específica es que el caché L2 garantice que un bloque físico tenga como máximo un bit de alias en un caché VIPT en el nivel superior.
 
-下面举一个例子说明 L2 如何解决 cache 别名问题。如下图所示，DCache 中有有一个虚地址为0x0000 的块，虚地址 0x0000 和 0x1000 映射到了同一个物理地址，且这两个地址的别名是不一样的；此时 DCache 向 L2 Acquire 了地址为 0x1000 的块，并在 Acquire 请求的 user 域中记录了别名 (0x1)，L2 在读目录后发现请求命中，但是 Acquire 的别名 (0x1) 和 L2 记录的 DCache 在该物理地址的别名 (0x0) 不同，于是 L2 会发起一个 Probe 子请求，并在 Probe 的 data 域中记录要 probe 下来的别名 (0x0)；Probe 子请求完成后，L2 再将这个块返回给 DCache，并将 L2 client directory 中的别名改为 (0x1)。
+El siguiente es un ejemplo para ilustrar cómo L2 resuelve el problema del alias de caché. Como se muestra en la figura siguiente, hay un bloque con una dirección virtual de 0x0000 en DCache. Las direcciones virtuales 0x0000 y 0x1000 están asignadas a la misma dirección física y los alias de estas dos direcciones son diferentes. En este momento, DCache adquiere La dirección de 0x1000 y el alias (0x1) registrados en el campo de usuario de la solicitud de adquisición. Después de leer el directorio, L2 encontró que la solicitud se había realizado correctamente, pero el alias de adquisición (0x1) y el alias de DCache (0x0) registrados por L2 en la dirección física son diferentes. Luego, L2 iniciará una subsolicitud de sondeo y registrará el alias (0x0) que se va a sondear en el campo de datos de sondeo. Una vez que se completa la subsolicitud de sondeo, L2 devuelve el bloque a DCache y cambia el El alias en el directorio del cliente L2 es (0x1).
 
 ![](../figs/huancun_cache_alias-2.jpg)
