@@ -1,71 +1,68 @@
-# 指令缓存（Instruction Cache）文档
-<!-- 这个图需要重新画一下 -->
+# Instruction Cache Documentation
+<!-- This diagram needs to be redrawn -->
 ![icache](../figs/frontend/ICache.png)
 
-这一章描述香山处理器指令缓存的实现。
+This chapter describes the implementation of the Xiangshan processor instruction cache.
 
-## 指令缓存配置
-| 参数名称               | 参数描述                              |
-| -----------           | ------------------------------------ |
-| `nSet`                | 指令缓存 Set 数，默认为 256            |
-| `nWays`               | 指令缓存每个 Set 的组相连路数，默认为 8 路 |
-| `nTLBEntries`         | ITLB 的项数，默认为 40 项(32普通页 + 8项大页) |
-| `tagECC`              | Meta SRAM 的校验方式，南湖版本配置为奇偶校验 |
-| `dataECC`             | Data SRAM 的校验方式，南湖版本配置为奇偶校验 |
-| `replacer`            | 替换策略，默认为随机替换，南湖版本配置为 PLRU |
-| `hasPrefetch`         | 指令预取开关，默认为关闭 |
-| `nPrefetchEntries`    | 指令预取的 entry 数目，同时可支持的最大 cache line 预取数，默认为4 |
+## Instruction cache configuration
+| Parameter name | Parameter description |
+| ----------- | ------------------------------------ |
+| `nSet` | Number of instruction cache Sets, default is 256 |
+| `nWays` | Number of group-connected ways for each instruction cache Set, default is 8 ways |
+| `nTLBEntries` | Number of ITLB entries, default is 40 entries (32 normal pages + 8 large pages) |
+| `tagECC` | Meta SRAM check method, Nanhu version is configured as parity check |
+| `dataECC` | Data SRAM check method, Nanhu version is configured as parity check |
+| `replacer` | Replacement strategy, default is random replacement, Nanhu version is configured as PLRU |
+| `hasPrefetch` | Instruction prefetch switch, default is off |
+| `nPrefetchEntries` | Number of instruction prefetch entries, and the maximum number of cache line prefetches that can be supported at the same time, default is 4 |
 
+## Control Logic
+<!-- Internal Logic Diagram of the Main Control Logic Module MainPipe of the Instruction Cache: -->
 
-## 控制逻辑
-<!-- 指令缓存的主控制逻辑模块 MainPipe 的内部逻辑示意图： -->
+The Main Control Logic Module MainPipe of the Instruction Cache consists of a 3-stage pipeline:
 
-指令缓存的主控制逻辑模块 MainPipe 由 3 级流水线构成：
+- In the `s0` stage, an instruction fetch request containing two cache lines is sent from the FTQ, which contains a signal whether each request is valid (instruction packets that do not cross lines will only send a read request for one cache line). At the same time, MainPipe will extract the request address as a cache set index and send it to the [storage part](#imem) of the instruction cache. On the other hand, these requests will be sent to the ITLB for [instruction address translation](#itlb)
+- In the `s1` stage, the storage SRAM returns a cache set with a total of N cache ways (cache line metadata and data). At the same time, ITLB returns the physical address corresponding to the request. Next, the main control logic intercepts the physical address and matches it with the cache tags of N ways, generating two results: cache hit and cache miss. In addition, the cache line to be replaced is selected based on the status information of the replacement algorithm.
+- In the `s2` stage, the hit request directly returns the data to the IFU. When a miss occurs, the pipeline needs to be paused and the request is sent to the miss processing unit MissUnit. After the MissUnit is filled and returns the data, the data is returned to the IFU. In this stage, the physical address translated by the ITLB is also sent to the PMP module for access permission query. If the permission is wrong, an instruction access exception (Instruction Access Fault) will be triggered.
 
-- 在 `s0` 阶段从 FTQ 发送过包含两个 cache line 的取指令请求，其中包含了每个请求是否有效的信号（不跨行的指令 packet 止只会发送一个 cache line 的读请求），同时 MainPipe 一方面会把请求地址提取为缓存组索引（set index）发送给指令 Cache 的 [存储部分](#imem)，另一方面，这些请求会被发送给 ITLB 进行 [指令地址翻译](#itlb)
-- 在 `s1` 阶段，存储 SRAM 返回一个组（cache set）一共 N 个路 (cache way) 的 cache line 元数据和数据。同时 ITLB 返回请求对应的物理地址。接下来主控制逻辑截取物理地址并和 N 个路的 Cache tag 进行匹配，生成缓存命中（cache hit）和缓存缺失（cache miss）两种结果。另外还会根据替换算法的状态信息选出需要替换的 cache line。
-- 在 `s2` 阶段，hit 的请求直接返回数据给 IFU。而当发生 miss 的时候需要暂停流水线，并将请求发送给缺失处理单元 MissUnit。等到 MissUnit 充填完成并返回数据之后将数据返回给 IFU。这个阶段还会把 ITLB 翻译得到的物理地址发送给 PMP 模块进行访问权限的查询，如果权限错误会触发指令访问例外 (Instruction Access Fault)
+<h2 id=itlb> Instruction Address Translation </h2>
 
-<h2 id=itlb> 指令地址翻译 </h2>
+Since the instruction cache uses the VIPT (Virtual Index Physical Tag) cache method, the virtual address needs to be translated into a physical address before the address tag comparison. In the `s0` stage of the control pipeline, the virtual addresses of the two cacheline requests are sent to the query port of the ITLB at the same time, and the ITLB returns a signal whether the virtual address hits in this clock cycle. If it hits, the corresponding physical address will be returned in the next beat. If it does not hit, the control logic will block the MainPipe pipeline and wait until the ITLB refills and returns the physical address.
 
-由于指令缓存采用的是 VIPT（Virtual Index Physical Tag）的缓存方式，因此需要在地址 tag 比较之前先将虚拟地址翻译为物理地址。控制流水线的 `s0` 阶段，两个 cachline 请求的虚拟地址会同时发送到 ITLB 的查询端口，同时这一个时钟周期内 ITLB 返回虚地址是否命中的信号。命中则会在下一拍返回对应的物理地址。不命中则控制逻辑会阻塞 MainPipe 流水线，等待直到 ITLB 重填结束返回物理地址。
+## Cache miss processing
 
-## 缓存 miss 处理
+The request that misses will be handed over to the MissUnit to send a Tilelink `Aquire` request to the downstream L2 Cache. After the MissUnit receives the `Grant` request for the corresponding data, if the cache line needs to be replaced, the MissUnit will send a Release request to the ReplacePipe. The ReplacePipe will re-read the SRAM to get the data, and then send it to the ReleaseUnit to initiate a `Release` request to the L2 Cache. Finally, the MissUnit refills the SRAM, waits until the refill is completed, and returns the data to the MainPipe, and the MainPipe returns the data to the IFU.
 
-发生 miss 的请求会被移交给 MissUnit 向下游 L2 Cache 发送 Tilelink `Aquire` 请求，等到 MissUnit 收到对应数据的 `Grant` 请求之后，如果需要替换 cache line，MissUnit 则会向 ReplacePipe 发送 Release 请求，ReplacePipe 会重新读一遍 SRAM 得到数据，然后发送给 ReleaseUnit 发起向 L2 Cache 的 `Release` 请求。最后 MissUnit 重填写 SRAM，等到重填结束后返回数据给 MainPipe，MainPipe 再把数据返回给 IFU。
+A cache line miss may occur in any of the two requests, so two missEntry items are set in MissUnit to improve concurrency.
 
-miss 的 cache line 可能发生在两个请求中的任何一个，因此 MissUnit 里设置了两个处理 miss 的 missEntry 项来提高并发度。
+## Exception handling
+There are two main exceptions generated in ICache: Instruction Page Fault reported by ITLB and Access Fault reported by ITLB and PMP. MainPipe will report the exception information directly to IFU, and the requested data is considered invalid.
 
-## 例外的处理
-在 ICache 产生的例外主要包括两种：ITLB 报告的指令缺页例外（Instruction Page Fault）和 ITLB 和 PMP 报告的访问例外（Access Fault）。MainPipe 会把例外信息直接报告给 IFU，而请求的数据被视为无效。
+<h2 id=imem> Storage section </h2>
 
-<h2 id=imem> 存储部分 </h2>
+The storage logic of the instruction cache is mainly divided into Meta SRAM (storing the tag and consistency status of each cache line) and Data SRAM (storing the content of each cache line). Parity check code is supported internally for data verification. When a check error occurs, a bus error will be reported and an interrupt will be generated. Meta/Data SRAM is divided into parity banks internally. Two adjacent cache lines in the virtual address space will be divided into different banks to implement the reading of two cache lines at a time.
 
-指令 Cache 的存储逻辑主要分为了 Meta SRAM（存储每个 cache line 的 tag 以及一致性状态）和 Data SRAM（存储每个 cache line 的内容）。内部支持了奇偶校验码用以进行数据的校验，当校验发生错误的时候会给报总线错误并产生中断。Meta/Data SRAM 内部都分了奇偶 bank，虚地址空间中相邻的两个 cache line 会被分别划分到不同的 bank 来实现一次两个 cache line 的读取。
+## Coherence Support
 
+The instruction cache of Xiangshan Nanhu architecture implements the coherence protocol defined by Tilelink. It mainly handles Tilelink `Probe` and `Release` requests by adding an additional pipeline ReplacePipe.
 
-## 一致性支持
+The ReplacePipe of the instruction cache consists of 4 pipelines:
 
-香山南湖架构的指令 Cache 实现了 Tilelink 定义的一致性协议。主要是通过增加了一条额外的流水线 ReplacePipe 来处理 Tilelink `Probe` 和 `Release` 请求。
+- In the `r0` stage, it receives the `Probe` request sent from the ProbeUnit and the `Release` request sent from the MissUnit, and also initiates a read of the Meta/Data SRAM. Because the request here contains the virtual address and the actual physical address, there is no need to do address translation.
+- In the `r1` stage, ReplacePipe, like MainPipe, uses the physical address to match the address of the N-way cache line of a Set returned by SRAM, generating two signals, hit and miss. This signal is only valid for `Probe`, because the `Release` request must be in the instruction cache.
+- In the `r2` phase, the hit `Probe` request will modify the permissions of the corresponding cache block, and will send this request to ReleaseUnit to send a `ProbrResponse` request to L2. The permissions of this cache line are generated based on the original permissions (T/B) and the permissions of the Probe (toN, toB, toT). The miss request will not make permission changes, and will be sent to ReleaseUnit to report to L2 that the permissions have been changed to NToN (there is no data required by `Probe` in the instruction cache). The `Release` request will also be sent to ReleaseUnit to send `ReleaseData` to L2. And only `Release` requests are allowed to enter `r3`
+- In the `r3` phase, ReplacePipe reports to MissUnit that the replaced block has been `Release`ed downward, notifying MissUnit that it can be refilled.
 
+## Instruction prefetching
 
-指令缓存的 ReplacePipe 由 4 级流水线构成：
+The Xiangshan Nanhu architecture implements a simple `Fetch Directed Prefetching (FDP)`[^fdp], which allows branch prediction to guide instruction prefetching. For this purpose, an instruction prefetcher `IPrefetch` is added. The specific prefetch mechanism is as follows:
 
-- 在 `r0` 阶段接收从 ProbeUnit 发送过来的 `Probe` 请求和从 MissUnit 发送过来的 `Release` 请求，同时也会发起对 Meta/Data SRAM 的读取。因为这里的请求包含了虚拟地址和实际的物理地址，所以不需要做地址翻译。
-- 在 `r1` 阶段，ReplacePipe 和 MainPipe 一样用物理地址对 SRAM 返回的一个 Set 的 N 路 cache line 做地址匹配，产生 hit 和 miss 两种信号，这个信号仅仅对于 `Probe` 有效，因为 `Release` 的请求一定在指令缓存里。
-- 在 `r2` 阶段，hit 的 `Probe` 请求将修改对应缓存块的权限，同时会把这个请求发送给 ReleaseUnit 向 L2 发送 `ProbrResponse` 请求。这个 cache line 的权限根据原来的权限（T/B）和Probe的权限转化（toN, toB, toT）来产生新的权限。miss 的请求不会做权限更改，并且会发送给 ReleaseUnit 向 L2 报告权限转变为 NToN（指令缓存里没有 `Probe` 要求的数据）。`Release` 请求也会被发送到 ReleaseUnit 向 L2 发送 `ReleaseData`。且只有 `Release` 请求被允许进入 `r3`
-- 在 `r3` 阶段，ReplacePipe 向 MissUnit 报告被替换出去的块已经往下 `Release` 了，通知 MissUnit 可以进行重填。
+* A prefetch pointer is added to the instruction fetch target queue. The pointer is located between the prediction pointer and the instruction fetch pointer. The prefetch pointer reads the target address of the current instruction packet (if it jumps, it is the jump target, if it does not jump, it is the start address of the next packet in sequence) and sends it to the prefetcher.
 
+* The fetcher will complete the address translation and access the Meta SRAM of the instruction cache. If it finds that the address is already in the instruction cache, the prefetch request will be canceled. If not, it will apply for an allocation to `PrefetchEntry`, send a Tilelink `Hint` request to the `L2` cache, and prefetch the corresponding cache line to L2.
+* To ensure that prefetch requests are not sent repeatedly to L2, the prefetcher records the physical addresses of prefetch requests that have been sent. Any request will check this record before applying for `PrefetchEntry`. If it is found that it is the same as the prefetch request that has been sent, the current prefetch request will be canceled.
 
-## 指令预取
-
-香山南湖架构实现了简单的`Fetch Directed Prefetching (FDP)`[^fdp],即让分支预测来指导指令预取，为此加入了指令预取器`IPrefetch`。具体的预取机制如下： 
-
-* 取指目标队列中加入了一个预取指针，指针的位置在预测指针和取指令指针中间，预取指针读取当前指令packet的目标地址（如果跳转则为跳转目标，不跳转为顺序的下一个packet的起始地址），发送给预取器。
-* 取器会完成地址翻译并访问指令缓存的Meta SRAM，如果发现该地址已经在指令缓存中，则当此预取请求被取消。如果不再则向`PrefetchEntry`申请分配一项，向`L2`缓存发送Tilelink `Hint`请求，把相应的缓存行预取到L2。
-* 为了保证不重复向L2发送预取请求，预取器里记录了已发送的预取请求物理地址，任何请求在申请`PrefetchEntry`之前都会去查这个记录，如果发现和已发送的预取请求相同就会把当前预取请求取消掉。
-
-## 引用
+## Quote
 [^fdp]: Reinman G, Calder B, Austin T. Fetch directed instruction prefetching[C]//MICRO-32. Proceedings of the 32nd Annual ACM/IEEE International Symposium on Microarchitecture. IEEE, 1999: 16-27.
 
 --8<-- "docs/frontend/abbreviations.md"
