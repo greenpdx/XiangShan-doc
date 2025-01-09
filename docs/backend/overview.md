@@ -1,46 +1,46 @@
-# 后端流水线
+# Tubería de back-end
 
-## 整体设计
+## Diseño general
 
-处理器的流水线后端负责指令的重命名与乱序执行。如下图所示，香山处理器后端可以分为 CtrlBlock、IntBlock、FloatBlock、Memblock 4 个部分， CtrlBlock 负责指令的译码、重命名和分派， IntBlock、FloatBlock、MemBlock 分别负责整数、浮点、访存指令的乱序执行。
+El back end del pipeline del procesador es responsable del cambio de nombre y la ejecución fuera de orden de las instrucciones. Como se muestra en la figura a continuación, el backend del procesador Xiangshan se puede dividir en cuatro partes: CtrlBlock, IntBlock, FloatBlock y Memblock. CtrlBlock es responsable de decodificar, renombrar y enviar instrucciones, mientras que IntBlock, FloatBlock y MemBlock son responsables de las instrucciones de números enteros. , punto flotante y acceso a memoria, respectivamente. Ejecución de instrucciones fuera de orden.
 
-<figure markdown>
-  ![bpu](../figs/backend/backend.svg){ width="800" }
-  <figcaption>Backend 结构示意图 </figcaption>
-</figure>
+<figura rebajada>
+ ![bpu](../figs/backend/backend.svg){ ancho="800" }
+ <figcaption>Diagrama de estructura del backend</figcaption>
+</figura>
 
-在这些模块中，有很多可以配置的参数。在目前的代码中，上述 4 个 Block 分别默认采用如下配置：
+En estos módulos hay muchos parámetros configurables. En el código actual, los cuatro bloques anteriores utilizan las siguientes configuraciones de forma predeterminada:
 
-* CtrlBlock
+* CtrlBloquear
 
-    * 译码 / 重命名 / 分派宽度 = 6
+ * Ancho de decodificación/renombrado/envío = 6
 
-    * 发射前读寄存器堆
+ * Leer el archivo de registro antes de transmitir
 
-* IntBlock
+* Bloque Int
 
-    * 192 项物理寄存器
+ * 192 registros físicos
 
-    * 4 * ALU + 2 * MUL/DIV + 1 * CSR/JMP
+ * 4 * ALU + 2 * MUL/DIV + 1 * CSR/JMP
 
-* FloatBlock
+* Bloque flotante
 
-    * 192 项物理寄存器
+ * 192 registros físicos
 
-    * 4 * FMAC + 2 * FMISC
+ * 4 * FMAC + 2 * FMISC
 
-* MemBlock
+* Bloqueo de memoria
 
-    * 2 * LOAD + 2 * STORE （其中 STORE 分为 data 和 address 独立进行运算）
+ * 2 * CARGAR + 2 * ALMACENAR (ALMACENAR se divide en datos y dirección para un cálculo independiente)
 
-## 代码实现
+## Implementación del código
 
-目前，香山后端代码写得较为粗放，通过人工的参数化传递实现设计的可配置。未来，我们计划使用 Diplomacy 重写代码，实现更为清晰的参数化设计。
+En la actualidad, el código backend de Xiangshan está escrito de una manera relativamente básica y la configurabilidad del diseño se logra a través de la transmisión de parametrización manual. En el futuro, planeamos reescribir el código usando Diplomacy para lograr un diseño parametrizado más claro.
 
-在香山南湖的代码版本中，保留站与功能单元、寄存器堆被包裹成 ExuBlock，其中包含 Scheduler 和 FUBlock 两部分，前者又再次包含了保留站和寄存器堆、BusyTable，后者则包含了对应的功能单元。这些层次的包裹仅仅为参数传递与连线作用，其中的有效逻辑代码非常少。
+En la versión de código de Xiangshan Nanhu, la estación de reserva, la unidad funcional y la pila de registros se envuelven en ExuBlock, que contiene dos partes: Scheduler y FUBlock. El primero contiene nuevamente la estación de reserva, la pila de registros y BusyTable, mientras que el segundo contiene las funciones correspondientes. unidad. Estos niveles de empaquetado son sólo para pasar parámetros y cableado, y hay muy poco código lógico efectivo.
 
-在定点 ExuBlock 中，包含了 (1) ALU、MUL/DIV、MISC 的保留站；(2) LOAD、STORE DATA、STORE ADDR 的保留站；(3) ALU、MUL/DIV、MISC 功能单元。
+El ExuBlock de punto fijo incluye (1) estaciones de reserva para ALU, MUL/DIV y MISC; (2) estaciones de reserva para LOAD, STORE DATA y STORE ADDR; y (3) unidades funcionales ALU, MUL/DIV y MISC. .
 
-在浮点 ExuBlock 中，包含了 (1) FMA、FMISC 的保留站；(2) FMA、FMISC 功能单元。
+El ExuBlock de punto flotante incluye (1) estaciones de reserva FMA y FMISC y (2) unidades funcionales FMA y FMISC.
 
-在访存 MemBlock 中，包含了访存子系统的设计。
+El MemBlock de acceso a la memoria incluye el diseño del subsistema de acceso a la memoria.
