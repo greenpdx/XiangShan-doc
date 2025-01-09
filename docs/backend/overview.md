@@ -1,46 +1,46 @@
-# 后端流水线
+# Backend pipeline
 
-## 整体设计
+## Overall design
 
-处理器的流水线后端负责指令的重命名与乱序执行。如下图所示，香山处理器后端可以分为 CtrlBlock、IntBlock、FloatBlock、Memblock 4 个部分， CtrlBlock 负责指令的译码、重命名和分派， IntBlock、FloatBlock、MemBlock 分别负责整数、浮点、访存指令的乱序执行。
+The pipeline backend of the processor is responsible for renaming and out-of-order execution of instructions. As shown in the figure below, the backend of the Xiangshan processor can be divided into 4 parts: CtrlBlock, IntBlock, FloatBlock, and Memblock. CtrlBlock is responsible for decoding, renaming, and dispatching instructions. IntBlock, FloatBlock, and MemBlock are responsible for out-of-order execution of integer, floating point, and memory access instructions respectively.
 
 <figure markdown>
-  ![bpu](../figs/backend/backend.svg){ width="800" }
-  <figcaption>Backend 结构示意图 </figcaption>
+![bpu](../figs/backend/backend.svg){ width="800" }
+<figcaption>Backend structure diagram </figcaption>
 </figure>
 
-在这些模块中，有很多可以配置的参数。在目前的代码中，上述 4 个 Block 分别默认采用如下配置：
+In these modules, there are many configurable parameters. In the current code, the above four blocks are configured as follows by default:
 
 * CtrlBlock
 
-    * 译码 / 重命名 / 分派宽度 = 6
+* Decode/Rename/Dispatch Width = 6
 
-    * 发射前读寄存器堆
+* Read register stack before launch
 
 * IntBlock
 
-    * 192 项物理寄存器
+* 192 physical registers
 
-    * 4 * ALU + 2 * MUL/DIV + 1 * CSR/JMP
+* 4 * ALU + 2 * MUL/DIV + 1 * CSR/JMP
 
 * FloatBlock
 
-    * 192 项物理寄存器
+* 192 physical registers
 
-    * 4 * FMAC + 2 * FMISC
+* 4 * FMAC + 2 * FMISC
 
 * MemBlock
 
-    * 2 * LOAD + 2 * STORE （其中 STORE 分为 data 和 address 独立进行运算）
+* 2 * LOAD + 2 * STORE (where STORE is divided into data and address for independent calculation)
 
-## 代码实现
+## Code Implementation
 
-目前，香山后端代码写得较为粗放，通过人工的参数化传递实现设计的可配置。未来，我们计划使用 Diplomacy 重写代码，实现更为清晰的参数化设计。
+Currently, the Xiangshan backend code is written in a rough way, and the design is configurable through manual parameterization transfer. In the future, we plan to use Diplomacy to rewrite the code to achieve a clearer parameterized design.
 
-在香山南湖的代码版本中，保留站与功能单元、寄存器堆被包裹成 ExuBlock，其中包含 Scheduler 和 FUBlock 两部分，前者又再次包含了保留站和寄存器堆、BusyTable，后者则包含了对应的功能单元。这些层次的包裹仅仅为参数传递与连线作用，其中的有效逻辑代码非常少。
+In the code version of Xiangshan Nanhu, the reservation station, functional unit, and register stack are packaged into ExuBlock, which includes Scheduler and FUBlock. The former again includes the reservation station, register stack, and BusyTable, while the latter includes the corresponding functional unit. These levels of packaging are only for parameter passing and wiring, and there is very little effective logic code.
 
-在定点 ExuBlock 中，包含了 (1) ALU、MUL/DIV、MISC 的保留站；(2) LOAD、STORE DATA、STORE ADDR 的保留站；(3) ALU、MUL/DIV、MISC 功能单元。
+In the fixed-point ExuBlock, it includes (1) reservation stations for ALU, MUL/DIV, and MISC; (2) reservation stations for LOAD, STORE DATA, and STORE ADDR; (3) functional units of ALU, MUL/DIV, and MISC.
 
-在浮点 ExuBlock 中，包含了 (1) FMA、FMISC 的保留站；(2) FMA、FMISC 功能单元。
+In the floating-point ExuBlock, it includes (1) reservation stations for FMA and FMISC; (2) functional units of FMA and FMISC.
 
-在访存 MemBlock 中，包含了访存子系统的设计。
+In the memory access MemBlock, the design of the memory access subsystem is included.
