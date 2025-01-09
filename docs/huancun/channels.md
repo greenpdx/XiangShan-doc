@@ -1,99 +1,77 @@
-# Tilelink 各通道控制
+# Tilelink Channel Control
 
-本章将介绍 huancun 中各个通道控制模块的结构。阅读前请提前熟悉 TileLink 总线协议。
+This chapter will introduce the structure of each channel control module in huancun. Please be familiar with the TileLink bus protocol before reading.
 
-通道控制模块分为 Sink 模块和 Source 模块，其中，
+The channel control module is divided into Sink module and Source module, among which,
 
-* Sink 模块接收 TileLink 总线上的的主动请求和被动响应。对于主动请求（SinkA，SinkB，SinkC），将该请求转换为 huancun 内部请求发送给 MSHR Alloc 模块或者 Request Buffer，对于被动响应，将该响应经过处理后回馈给对应的 MSHR（SinkD，SinkE）
+* The Sink module receives active requests and passive responses on the TileLink bus. For active requests (SinkA, SinkB, SinkC), the request is converted into a huancun internal request and sent to the MSHR Alloc module or Request Buffer. For passive responses, the response is processed and fed back to the corresponding MSHR (SinkD, SinkE)
 
-* Source 模块接收 MSHR 的内部请求，经过处理和包装发送到 TileLink 总线上（SourceA，SourceB，SourceC，SourceD，SourceE）
+* The Source module receives the internal request of MSHR, and sends it to the TileLink bus after processing and packaging (SourceA, SourceB, SourceC, SourceD, SourceE)
 
-另外，部分模块还会额外接收从 MSHR 发来的 Task，完成一些相关任务。
-
-
+In addition, some modules will also receive additional Tasks sent from MSHR to complete some related tasks.
 
 ## SinkA
 
-SinkA 把从 A 通道接收到的请求转发给 MSHR Alloc，如果不带数据则直接转发；如果有数据（如 PutData 等）则需要存进 PutBuffer。数据的各个 Beat 以一个数组的形式存进 PutBuffer 中的空闲项，并把该空闲项索引一并转发给 MSHR Alloc。
+SinkA forwards the request received from channel A to MSHR Alloc. If there is no data, it is forwarded directly; if there is data (such as PutData, etc.), it needs to be stored in PutBuffer. Each Beat of the data is stored in the free item in PutBuffer in the form of an array, and the free item index is forwarded to MSHR Alloc.
 
-存入 PutBuffer 的数据会被 SourceD 或者 SourceA 所使用。当该 Put 请求在 Cache 中 Hit 时，由 SourceD 负责将其写入 DataStorage 中；当 Miss 时，由 SourceA 负责直接转发到下一级 Cache 或内存。
+The data stored in PutBuffer will be used by SourceD or SourceA. When the Put request hits in the cache, SourceD is responsible for writing it to DataStorage; when it misses, SourceA is responsible for forwarding it directly to the next level of cache or memory.
 
-当接收一个新请求时，A 通道会因为 MSHR Alloc 不 ready 或者 PutBuffer 为满（当有数据时）而阻塞；一旦接收一个带数据的请求后，不会阻塞其后续 Beat 的接收。
-
-
+When receiving a new request, channel A will be blocked because MSHR Alloc is not ready or PutBuffer is full (when there is data); once a request with data is received, it will not block the reception of its subsequent Beats.
 
 ## SinkB
 
-SinkB 把从 B 通道接收到的请求转发给 MSHR Alloc，除此之外无任何逻辑。
-
-
+SinkB forwards the request received from channel B to MSHR Alloc, and there is no other logic.
 
 ## SinkC
 
-SinkC 接收上层释放权限或数据的请求，包括 Client 主动释放的 Release/ReleaseData 以及被动释放的应答 ProbeAck/ProbeAckData，将请求转发给 MSHR Alloc。
+SinkC receives requests from the upper layer to release permissions or data, including Release/ReleaseData released actively by the Client and ProbeAck/ProbeAckData responded to passive release, and forwards the request to MSHR Alloc.
 
-关于 ReleaseData/ProbeAckData 的处理，和 SinkA 对 PutData 请求的处理流程是相似的。 SinkC 维护一个 Buffer，数据的各个 Beat 以数组的形式存进 Buffer 中的空闲项，将该索引转发给 MSHR Alloc。SinkC 接收来自 MSHR 的 Task 以处理 Buffer 中的数据，Task 分为三种类型，分别是
+The processing of ReleaseData/ProbeAckData is similar to the processing flow of SinkA for PutData request. SinkC maintains a Buffer, and each Beat of the data is stored in the free item in the Buffer in the form of an array, and forwards the index to MSHR Alloc. SinkC receives Tasks from MSHR to process the data in the Buffer. Tasks are divided into three types, namely
 
-* Save：将 Buffer 中的数据项存进 DataStorage
-* Through：将 Buffer 中的数据项经过包装直接 Release 到下层 Cache 或内存
-* Drop：丢弃 Buffer 中的数据项
+* Save: Store the data items in the Buffer into DataStorage
+* Through: Release the data items in the Buffer directly to the lower-level Cache or memory after packaging
+* Drop: Discard the data items in the Buffer
 
-当接收到 Task 时，SinkC 进入 Busy 状态，不接收后续任务直到该 Task 处理完成。如果该 Task 需要处理的若干数据 Beat 仍未收到时，会进行阻塞（由 beatValsThrough/beatValsSave 控制）。
-
-
+When receiving a Task, SinkC enters the Busy state and does not receive subsequent tasks until the Task is processed. If the Task has not received the data Beats that need to be processed, it will be blocked (controlled by beatValsThrough/beatValsSave).
 
 ## SinkD
 
-SinkD 接收 D 通道的 Grant/GrantData 和 ReleaseAck 响应，用 Source 域查询 MSHR 得到 set 和 way，在收到第一个或最后一个 Beat 的时候返回 Resp 信号给 MSHR。对于有数据的响应，会将 Grant 上来的数据同时发给 DataStorage 和 [RefillBuffer](misc.md).
-
-
+SinkD receives the Grant/GrantData and ReleaseAck responses from the D channel, uses the Source field to query MSHR to get the set and way, and returns the Resp signal to MSHR when receiving the first or last Beat. For responses with data, the data from the Grant will be sent to DataStorage and [RefillBuffer](misc.md) at the same time.
 
 ## SinkE
 
-接收 E 通道的 GrantAck，发送 Resp 给 MSHR，除此之外无任何逻辑。
-
-
+Receives GrantAck from the E channel and sends Resp to MSHR. There is no other logic.
 
 ## SourceA
 
-接收来自 MSHR 的 Acquire 和 Put 请求，从 A 通道转发出去。对于 Put 请求，会向 SourceA 中的 PutBuffer 读取数据然后再向下转发。
-
-
+Receives Acquire and Put requests from MSHR and forwards them from the A channel. For Put requests, it reads data from the PutBuffer in SourceA and then forwards it downward.
 
 ## SourceB
 
-SourceB 接收来自 MSHR 的 Task，通过 B 通道发送 Probe 请求。SourceB 在内部会维护一个状态寄存器 workVec，workVec 的每一 bit 对应一个支持 Probe 的 Client，当 workVec 为空时可以接收来自 MSHR 的请求，把所有需要 Probe 的 Client 在 workVec 寄存器中标记上；标记上以后依次向这些 Client 发送 Probe，同时依次清除掉标记位。
-
-
+SourceB receives Tasks from MSHR and sends Probe requests through the B channel. SourceB maintains a status register workVec internally. Each bit of workVec corresponds to a client that supports Probe. When workVec is empty, it can receive requests from MSHR and mark all clients that need Probe in the workVec register. After marking, it sends Probe to these clients in turn and clears the mark bits in turn.
 
 ## SourceC
 
-SourceC 接收来自 MSHR 的 Task，负责向 DataStorage 发送读取请求，接收到数据后存入队列，出队后从 C 通道发送出去。
+SourceC receives Tasks from MSHR and is responsible for sending read requests to DataStorage. After receiving data, it stores it in the queue and sends it out from the C channel after dequeuing.
 
-设置一个队列的原因是，SourceC 的流水没有加阻塞机制，且 DataStorage 也没有阻塞和取消功能，这就要求一旦允许接收一个 Task 就一定要能够将它处理完毕进入 Queue。此处使用反压控制，保证即使在 C 通道一直堵着的情况下，Queue 里的空间能容下可能将要进入的所有项：包括流水线中 impending 的 SRAMLatency 项加上当前 Task 去读 dataStorage 得到的 beatSize 个项。
-
-
+The reason for setting a queue is that SourceC's pipeline does not have a blocking mechanism, and DataStorage does not have blocking and cancellation functions. This requires that once a Task is allowed to be received, it must be able to be processed and enter the Queue. Back pressure control is used here to ensure that even if the C channel is always blocked, the space in the Queue can accommodate all items that may enter: including the impending SRAMLatency items in the pipeline plus the beatSize items obtained by the current Task to read dataStorage.
 
 ## SourceD
 
-SourceD 是通道控制模块中最复杂的一个，它主要有两个职责：读取数据通过 D 通道发回上级、向 DataStorage 发写请求以处理 Put 等请求。
+SourceD is the most complex of the channel control modules. It has two main responsibilities: reading data and sending it back to the upper level through the D channel, and sending write requests to DataStorage to process Put and other requests.
 
-第 1 级根据 Task 的信息向 DataStorage 或者 RefillBuffer 发送读请求，并置 Busy 阻塞新 Task，当最后一个 Beat 的请求发完后才允许新 Task 进入
+Level 1 sends a read request to DataStorage or RefillBuffer based on the Task information, and sets Busy to block new Tasks. New Tasks are allowed to enter only after the request of the last Beat is sent.
 
-第 2 级首先向 SinkA 的 PutBuffer 发送读请求，接收到数据后存入队列；如果 Task 不需要数据或者数据从 RefillBuffer 中 Bypass 过来，该级直接通过 D 通道发送响应
+Level 2 first sends a read request to PutBuffer of SinkA, and stores the data in the queue after receiving it; if the Task does not need the data or the data is bypassed from RefillBuffer, this level sends a response directly through the D channel.
 
-第 3 级和第 2 级通过一个 Pipe 相连接，即 DataStorage 返回数据后才进入第 3 级。对于一般请求，该级将读取的数据通过 D 通道发送响应；对于 Put 请求，该级在处理首 Beat 时发送 AccessAck 响应。
+Level 3 is connected to Level 2 through a Pipe, that is, it enters Level 3 only after DataStorage returns data. For general requests, this level sends a response to the read data through the D channel; for Put requests, this level sends an AccessAck response when processing the first Beat.
 
-第 4 级向 DataStorage 发送写请求
+Level 4 sends a write request to DataStorage
 
+#### Bypass check
 
-
-#### 旁路检查
-
-对于同一个请求，SourceD 的优先级一定是最低的，DataStorage 中对每个通道优先级的制定其实就是按照同一个请求的任务优先级来定的。然而，由于 MSHR 在向 SourceD 发请求完成之前就会释放，DataStorage 里的优先级规则便会被破坏。对于 Acquire 请求，收到 GrantAck 就释放，但 Client 的 GrantAck 可以在收到 Grant first 的时候就给，那么在 Grant last 之前，MSHR 收到了 GrantAck 就释放了。对于 Get 请求，不需要 GrantAck，只要 SourceD 发出去了，MSHR 就释放。在这些提前释放的情况下，Get 和 Acquire 可能还正在 SourceD 读数据时，下一个同 Set 的请求就过来了，并发出了对这个 Set 的写操作，从正确性上来讲，肯定是前面的读要先做，但 SourceD 在 DataStorage 的优先级又是最低的，因此解决方案是要把 SourceD 的 Set/Way 拉出来，跟要写的通道做个比较，如果 Set/Way 相同，则阻塞它们，让 SourceD 先做。
-
-
+For the same request, SourceD must have the lowest priority. The priority of each channel in DataStorage is actually determined according to the task priority of the same request. However, since MSHR will be released before the request to SourceD is completed, the priority rule in DataStorage will be violated. For Acquire requests, it is released when GrantAck is received, but the GrantAck of the Client can be given when Grant first is received, so before Grant last, MSHR will release it when it receives GrantAck. For Get requests, GrantAck is not required. As long as SourceD sends it, MSHR will release it. In these early release situations, Get and Acquire may still be reading data from SourceD when the next request for the same Set comes and issues a write operation to this Set. From the perspective of correctness, the previous read must be done first, but SourceD has the lowest priority in DataStorage. Therefore, the solution is to pull out SourceD's Set/Way and compare it with the channel to be written. If the Set/Way is the same, block them and let SourceD do it first.
 
 ## SourceE
 
-接收来自 MSHR 的请求，从 E 通道发送 GrantAck。
+Receive the request from MSHR and send GrantAck from the E channel.
