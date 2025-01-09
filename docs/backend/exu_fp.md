@@ -1,17 +1,17 @@
-# 浮点部件简介
+# Introducción a los componentes de punto flotante
 
-香山南湖版本使用的浮点部件在[fudian](https://github.com/OpenXiangShan/fudian)处进行维护，其中包含以下模块:
+Los componentes de punto flotante utilizados por la versión Xiangshan Nanhu se mantienen en [fudian](https://github.com/OpenXiangShan/fudian), que contiene los siguientes módulos:
 
-* Two-path Floating-point Adder
-* Floating-point Multiplier
-* Cascade FMA
-* Float -> Int Converter
-* Int -> Float Converter
-* Float -> Float Converter
-* Floating-point Divider and SQRT Unit
+* Sumador de punto flotante de dos rutas
+* Multiplicador de punto flotante
+* Cascada FMA
+* Convertidor de flotante -> entero
+* Convertidor Int -> Flotante
+* Convertidor de flotante -> flotante
+* Divisor de punto flotante y unidad SQRT
 
-其中FMA操作延迟为5拍，其余运算均为3拍延迟。
+El retraso de la operación FMA es de 5 tiempos y las otras operaciones tienen un retraso de 3 tiempos.
 
-## DIV & SQRT
+## DIV y RAIZ CUADRADA
 
-香山的浮点除法部件和定点除法一样采用 SRT16 算法。浮点开方部件使用 SRT4 算法。两者共用预处理和后处理逻辑。
+La unidad de división de punto flotante de Xiangshan utiliza el algoritmo SRT16, al igual que la división de punto fijo. El componente de raíz cuadrada de punto flotante utiliza el algoritmo SRT4. Ambos comparten lógica de preprocesamiento y posprocesamiento.
