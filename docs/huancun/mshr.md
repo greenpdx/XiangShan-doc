@@ -1,36 +1,36 @@
-# MSHR设计
+Diseño #MSHR
 
-本章介绍huancun中non-inclusive MSHR(Miss Status Holding Registers)的设计。
+Este capítulo presenta el diseño de MSHR (Miss Status Holding Registers) no inclusivo en huancun.
 
-当huancun接收到上层cache的Acquire/Release请求，或者接收到下层cache的Probe请求时，会为该请求分配一项MSHR，同时通过读目录获取该地址在本层及以上cache中的权限信息，MSHR根据这些信息决定：
+Cuando Huancun recibe una solicitud de adquisición/liberación de un caché superior o una solicitud de sondeo de un caché inferior, asigna un MSHR para la solicitud y obtiene la información de permisos de la dirección en el caché en este nivel y superiores leyendo el directorio. Con base en esta información, decida:
 
-* [权限控制](#meta_control)：如何更新self directory/client directory中的权限；
+* [Control de permisos](#meta_control): Cómo actualizar los permisos en el directorio propio/directorio del cliente;
 
-* [请求控制](#request_control)：是否需要向上下层cache发送子请求，并等待这些子请求的响应；
+* [Control de solicitud](#request_control): si se deben enviar subsolicitudes a los cachés superior e inferior y esperar respuestas a estas subsolicitudes;
 <!--
-TODO
-* 遇到请求的嵌套如何处理等。
+HACER
+* Cómo manejar solicitudes anidadas, etc.
 -->
-下面将<b>以L2 Cache为例</b>从这几个方面介绍huancun MSHR的设计。
+A continuación se presentará el diseño de huancun MSHR desde estos aspectos utilizando L2 Cache como ejemplo.
 
 
-<h2 id=meta_control>权限控制</h2>
+<h2 id=meta_control>Control de permisos</h2>
 
-huancun中的数据是non-inclusive存储的，但目录是严格采用包含策略的，所以MSHR可以拿到请求地址在ICache、DCache和L2 Cache中的所有权限信息，从而控制该地址权限的变化。XiangShan的缓存系统中每个地址都遵循TileLink一致性树的规则，每个块在缓存系统的各层都有N(None)、B(Branch)、T(Trunk)、TT(TIP)四个状态，前三者分别对应着没有权限、只读、可读可写。一致性树按照内存、L3、L2、L1的顺序自下而上生长，内存作为根节点拥有可读可写的权限，在每一层中子节点的权限都不能超过父节点的权限。其中TT代表拥有T权限的枝杈上的叶子节点，说明该节点上层只有N或B权限，相反T权限而不是TT权限的节点代表上层一定还有T/TT权限节点。详细规则请参考TileLink手册9.1章。
+Los datos en huancun se almacenan de forma no inclusiva, pero el directorio adopta estrictamente la estrategia de inclusión, por lo que MSHR puede obtener toda la información de permisos de la dirección solicitada en ICache, DCache y L2 Cache, controlando así el cambio del permiso de la dirección. Cada dirección del sistema de caché de XiangShan sigue las reglas del árbol de consistencia de TileLink. Cada bloque tiene cuatro estados en cada capa del sistema de caché: N (Ninguno), B (Rama), T (Tronco) y TT (TIP). Los primeros tres corresponden a sin permiso, solo lectura y legible y escribible. El árbol de consistencia crece de abajo hacia arriba en el orden de la memoria, L3, L2 y L1. La memoria, como nodo raíz, tiene permisos de lectura y escritura. En cada capa, los permisos de los nodos secundarios no pueden superar los permisos de los nodos secundarios. el nodo padre. Entre ellos, TT representa un nodo hoja en una rama con permiso T, lo que significa que la capa superior de este nodo solo tiene permiso N o B. Por el contrario, un nodo con permiso T pero sin permiso TT significa que debe haber un Nodo de permiso T/TT en la capa superior. Para conocer las reglas detalladas, consulte el Capítulo 9.1 del Manual de TileLink.
 
-MSHR根据请求的类型和读目录的结果更新self directory的dirty位、权限域、clientStates域，其中clientStates表示如果该地址在当前cache中有权限(B及以上权限)，那么这个地址在上层的L1 Cache中的权限是什么；此外，MSHR还会更新ICache和DCache对应的client directory，包括权限域和别名域（将在[Cache 别名问题](./cache_alias.md)一章中介绍）。
+MSHR actualiza el bit sucio, el campo de permiso y el campo clientStates del directorio propio según el tipo de solicitud y el resultado de la lectura del directorio. ClientStates indica que si la dirección tiene permiso (B o superior) en la memoria caché actual, entonces esta dirección está en la caché L1 superior. Además, MSHR también actualizará el directorio de clientes correspondiente a ICache y DCache, incluido el dominio de permisos y el dominio de alias (que se presentarán en el capítulo [Problema de alias de caché](./cache_alias.md)) ).
 
-下面举两个例子简单说明MSHR如何判断权限的修改，以及目录的设计为什么需要这些域。
+Los siguientes dos ejemplos ilustran brevemente cómo MSHR determina los cambios de permisos y por qué estos campos son necesarios en el diseño de directorios.
 
-1. 假如DCache拥有地址X的权限，而ICache没有，这时ICache向L2请求获取X的权限。这时L2需要判断L2是否有块X、DCache是否有块X、如果有的话权限够不够等，MSHR将根据这些信息决定是直接向ICache返回数据，还是向DCache要数据(Probe)再返回给ICache，还是需要向L3 Acquire这个块再转发给ICache，所以我们需要在self directory和client directory中分别维护权限位。
+1. Si DCache tiene permiso para direccionar X, pero ICache no, ICache solicita permiso para X desde L2. En este momento, L2 debe determinar si L2 tiene el bloque X, si DCache tiene el bloque X y, de ser así, si los permisos son suficientes. En función de esta información, MSHR decidirá si devolver los datos directamente a ICache o solicitar a DCache datos (Sonda) y luego devolverlo a ICache, aún necesita adquirir este bloque de L3 y luego reenviarlo a ICache, por lo que necesitamos mantener los bits de permiso en el directorio propio y en el directorio del cliente respectivamente.
 
-2. 假如DCache拥有地址X的权限，而L2没有，这时DCache将X替换了出去，向下发送Release地址X的请求，L2收到请求后分配了一项MSHR，同时我们希望L2能够保存DCache Release下来的块X，如果需要替换的话L2还要根据替换策略向L3 Release替换块Y。在这个例子中，我们需要知道Y在L2中是否是脏数据，这涉及到向L3 Release Y时是否需要带数据，所以self directory中需要dirty位；在把Y替换出L2时，需要知道Release应该带什么样的param，所以self directory中需要维护clientStates域，从而判断上层节点在地址Y上的权限。
+2. Si DCache tiene permiso para la dirección X, pero L2 no, entonces DCache reemplaza X y envía una solicitud para liberar la dirección X. Después de recibir la solicitud, L2 asigna un MSHR. Al mismo tiempo, esperamos que L2 pueda guardar DCache Si es necesario reemplazar el bloque X liberado, L2 también debe liberar el bloque de reemplazo Y a L3 de acuerdo con la estrategia de reemplazo. En este ejemplo, necesitamos saber si Y son datos sucios en L2, lo que implica si se deben traer datos al liberar Y a L3, por lo que el bit sucio es necesario en el directorio propio; al reemplazar Y fuera de L2, necesitamos saber ¿Cuál debería ser la versión? ¿Qué tipo de parámetro se incluye? Por lo tanto, el dominio clientStates debe mantenerse en el directorio propio para determinar la autoridad del nodo superior en la dirección Y.
 
-关于directory的更多细节可以阅读[目录设计](./directory.md)。
+Para obtener más detalles sobre el directorio, lea [Diseño de directorio](./directory.md).
 
 
-<h2 id=request_control>请求控制</h2>
+<h2 id=request_control>Control de solicitud</h2>
 
-MSHR需要根据请求的内容和读目录的结果判断需要完成哪些子请求，包括是否需要向下Acquire或Release，是否需要向上Probe，是否应该触发一条预取，是否需要修改目录和tag等等；除了子请求，MSHR还要记录需要等待哪些子请求的应答。
+MSHR debe determinar qué subsolicitudes deben completarse en función del contenido de la solicitud y el resultado de la lectura del directorio, incluyendo si se debe adquirir o liberar hacia abajo, si se debe sondear hacia arriba, si se debe activar una búsqueda previa, si se debe modificar el directorio y etiqueta, etc. Solicitud, MSHR también necesita registrar qué subsolicitudes deben esperar respuestas.
 
-MSHR将这些要调度的请求和要等待的应答具体成一个个事件，并用一系列状态寄存器记录这些事件是否完成。`s_*`寄存器表示要调度的请求，`w_*`寄存器表示要等待的应答，MSHR在拿到读目录的结果后会把需要完成的事件(`s_*`和`w_*`寄存器)置为`false.B`，表示请求还未发送或应答还没有收到，在事件完成后再将寄存器置为`true.B`，当所有事件都完成后，该项MSHR就会被释放。
+MSHR especifica que estas solicitudes se programen y las respuestas que se esperen como eventos, y utiliza una serie de registros de estado para registrar si estos eventos se completan. Los registros `s_*` indican la solicitud que se debe programar y los registros `w_*` indican la respuesta que se debe esperar. Después de que MSHR obtenga el resultado de la lectura del directorio, establecerá los eventos que deben completarse (` Los registros s_*` y `w_*` se configuran como `false.B`, lo que indica que no se ha enviado la solicitud o que no se ha recibido la respuesta. Una vez completado el evento, el registro se configura como `true.B` Cuando se completen todos los eventos, se publicará el MSHR.
