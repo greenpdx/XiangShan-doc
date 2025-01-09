@@ -1,34 +1,33 @@
-# 发射 Issue
+# Issue
 
+During the instruction emission phase, the main module involved is the reservation station (or emission queue), which is `ReservationStation` in the code, referred to as RS. The instructions involved in the emission phase mainly include enqueue, selection, data reading, dequeue and other operations. At the same time, the reservation station is also responsible for monitoring the instruction write back and waking up the waiting instructions. Xiangshan currently adopts the design of reading the register stack before emission.
 
-在指令的发射阶段，涉及到的主要模块是保留站（或称为发射队列），在代码中为 `ReservationStation`，简称为 RS。指令在发射阶段涉及到的主要包括入队、选择、读数据、出队等操作，同时保留站还需要负责对指令写回的监听以及对等待指令的唤醒等操作。香山目前采用了发射前读寄存器堆的设计方案。
+## Main modules and data structures
 
-## 主要模块与数据结构
+The main data structures in the reservation station include instruction status `StatusArray`, instruction storage `PayloadArray` and data storage `DataArray`. The main module also includes the selection logic `SelectPolicy`, which is used to allocate free table entries for enqueued instructions and select ready instructions for emission.
 
-保留站内的主要数据结构包括指令状态 `StatusArray`、指令存储 `PayloadArray` 和数据存储 `DataArray`。主要模块还包括选择逻辑 `SelectPolicy`，用来为入队指令分配空闲表项、选择就绪的指令进行发射。
+## Enqueue
 
-## 入队
+Instructions are enqueued through the interface `io.allocate`, and the corresponding items will be updated to `StatusArray` and `PayloadArray` in T cycles. The read data of the register file will arrive in the T + 1 cycle, so it will be bypassed in the current shot (if the selected instruction is the instruction queued in the previous shot) or stored in `DataArray`. According to the different information of the instruction, the status in `StatusArray` will be updated accordingly.
 
-指令的入队通过接口 `io.allocate` 完成，对应的项会在 T 周期被更新至 `StatusArray` 和 `PayloadArray`。寄存器堆的读数据会在 T + 1 周期到达，因此会在当拍被旁路（如果被选择的指令是前一拍入队的指令）或被存入 `DataArray`。根据指令的不同信息，`StatusArray` 中的状态会被相应更新。
+## Selection
 
-## 选择
+In the T cycle, the `StatusArray` module will output the instructions that can be awakened in the current shot and input them to the `SelectPolicy` module to obtain the ready instructions selected in the current shot. Due to the existence of the AGE algorithm, the current shot will select `IssueWidth + 1` instructions and determine the instructions available for issuance in the T + 1 cycle.
 
-在 T 周期，`StatusArray` 模块会输出当拍可被唤醒的指令，并输入给 `SelectPolicy` 模块，得到当拍被选择的就绪的指令。由于 AGE 算法的存在，当拍会选择 `IssueWidth + 1` 条指令，并在 T + 1 周期确定可供发射的指令。
+## Read data
 
-## 读数据
+At present, Xiangshan implements the design of reading the register file before issuance. For such a design, the operands of the instruction will be stored in RS one more time, and the index is the position of the corresponding instruction in RS. `DataArray` is an asynchronous read design, which reads the corresponding operands according to the position of RS.
 
-目前香山实现的是发射前读寄存器堆的设计，对于这样的设计，指令的操作数会在 RS 中多存储一份，且索引是对应指令在 RS 中的位置。`DataArray` 是一个异步读的设计，根据 RS 的位置读出对应的操作数。
+Xiangshan can be easily modified to a design that reads the register file after emission. In this case, the index of the read data is the corresponding physical register number.
 
-香山很容易被修改成发射后读寄存器堆的设计，在这种情况下，读数据的索引为对应的物理寄存器号。
+## Dequeue
 
-## 出队
+Dequeue is the last stage of the reservation station. The instruction is selected at T0, T1 reads the data, and T2 completes the handshake and dequeues. The corresponding interface is `io.deq`.
 
-出队是保留站的最后一级流水。指令在 T0 被选择，T1 读数据，T2 会完成握手并出队，对应的接口是 `io.deq`。
+## Listening and wake-up
 
-## 监听与唤醒
+The reservation station needs to listen to the write-back signal of the instruction (in the design of reading the register file before emission, it is also necessary to listen to the data written back by the instruction), and save the operands required by the instruction in the reservation station accordingly. The `StatusArray` module is responsible for listening to the write-back bus and determining which instructions have operands that match it. The matching signal and the write-back data of the instruction will be sent to the port of `DataArray`, and the write-back data will be captured.
 
-保留站需要监听指令的写回信号（在发射前读寄存器堆的设计中，还需要监听指令写回的数据），并相应地保存保留站中指令所需要的操作数。`StatusArray` 模块负责对写回总线进行监听，并判断哪些指令的操作数与之匹配。匹配信号及指令的写回数据会被送到 `DataArray` 的端口上，并实现写回数据的捕获。
+## Optimizing the emission strategy of floating-point multiplication and addition instructions
 
-## 对浮点乘加指令的发射策略优化
-
-香山处理器的 FMA 单元支持乘加分离，可以同时处理浮点乘法和加法。因此，对于浮点乘加指令，我们在保留站实现了对他们的发射优化，当乘法的两个操作数就绪时，我们就允许指令进行发射，并将浮点乘法的中间结果写回保留站。当加法的第二个操作数就绪时，指令再次被发射，并完成全部运算。
+The FMA unit of the Xiangshan processor supports multiplication and addition separation, and can process floating-point multiplication and addition at the same time. Therefore, for floating-point multiply-add instructions, we implement their issuance optimization in the reservation station. When the two operands of the multiplication are ready, we allow the instruction to be issued and write the intermediate result of the floating-point multiplication back to the reservation station. When the second operand of the addition is ready, the instruction is issued again and completes the entire operation.
