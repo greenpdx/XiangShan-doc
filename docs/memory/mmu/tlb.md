@@ -1,39 +1,40 @@
-# 一级 TLB
+# Level 1 TLB
 
-## 基础介绍
+## Basic Introduction
 
-TLB（Translation Lookaside Buffer）负责进行地址翻译。
-香山支持手册中规定的 Sv39 模式，暂不支持其他几种模式。虚拟地址长度为 39 位，物理地址长度为 36 位，可参数化修改。
-虚存是否开启由当前特权级（如M mode 或 S Mode等）和 Satp 寄存器等共同决定，这一判断在 TLB 内部完成，对 TLB 外透明，因此在 TLB 外的模块看来，所有的地址都经过的 TLB 的地址转换。
+TLB (Translation Lookaside Buffer) is responsible for address translation.
+Xiangshan supports the Sv39 mode specified in the manual, and does not support other modes for the time being. The length of the virtual address is 39 bits, and the length of the physical address is 36 bits, which can be parameterized.
+Whether the virtual memory is enabled is determined by the current privilege level (such as M mode or S Mode, etc.) and the Satp register, etc. This judgment is completed inside the TLB and is transparent to the outside of the TLB. Therefore, from the perspective of modules outside the TLB, all addresses have undergone address translation by the TLB.
 
-## 组织形式
+## Organizational Form
 
-核内进行访存之前，包括前端取指和后端访存两部分，都需要由 TLB 进行地址翻译。因物理距离较远，并且为了避免相互污染，前端的 ITLB（instruction TLB）和后端访存的 DTLB（Data TLB）是两个的 TLB。ITLB 采用全相联模式，32 项普通页（NormalPage）负责 4KB 页，8 项大页（SuperPage）负责 2MB 和 1GB 的地址转换。DTLB 采用混合模式，64 项普通页直接相联负责 4KB 页，16 项大页全相联负责全部大小的页，采用伪 LRU 替换策略。普通页部分提供容量，但灵活性低，易冲突；大页部分灵活性强，但容量小。因此将普通页部分作为大页部分的 Victim，回填时，先回填大页部分，大页部分驱逐的项写到普通页部分（仅限 4KB 页）。
+Before accessing memory in the core, both the front-end instruction fetch and the back-end memory access need to be translated by the TLB. Due to the long physical distance and to avoid mutual contamination, the front-end ITLB (instruction TLB) and the back-end memory access DTLB (Data TLB) are two TLBs. ITLB adopts full associative mode, 32 items of normal pages (NormalPage) are responsible for 4KB pages, and 8 items of super pages (SuperPage) are responsible for 2MB and 1GB address conversion. DTLB adopts mixed mode, 64 items of normal pages are directly associative and responsible for 4KB pages, 16 items of super pages are fully associative and responsible for pages of all sizes, and adopts pseudo LRU replacement strategy. The normal page part provides capacity, but has low flexibility and is prone to conflict; the super page part has strong flexibility but small capacity. Therefore, the normal page part is used as the Victim of the super page part. When backfilling, the super page part is backfilled first, and the items evicted from the super page part are written to the normal page part (only for 4KB pages).
 
-访存拥有 2 个 Load 流水线，2 个 Store 流水线，为了时序考虑，它们需要一个单独的 TLB。同时为了性能考虑，这些 TLB 的内容需要保持一致，类似于相互预取。因此，这 4 个 DTLB 采用“外置”的替换算法模块，以保证内容的一致。
+Memory access has 2 Load pipelines and 2 Store pipelines. For timing considerations, they need a separate TLB. At the same time, for performance considerations, the contents of these TLBs need to be consistent, similar to mutual prefetching. Therefore, these 4 DTLBs use an "external" replacement algorithm module to ensure content consistency.
 
-## 阻塞与非阻塞
+## Blocking and non-blocking
 
-前端取指对 ITLB 的需求为阻塞式访问，即当 TLB miss 时，TLB 不立即返回 miss 结果，而是进行 Page Table Walk 取回页表项后返回。
-而后端访存对 DTLB 的需求为非阻塞式访问，即当 TLB miss 时，TLB 也需要立即返回结果，无论是 miss 还是 hit。
-Yanqihu 架构和 Nanhu 架构中，TLB本体为非阻塞式访问，前端取指的阻塞式访问由前端模块完成 replay，TLB 不存储请求的信息。
+The front-end instruction fetch requires blocking access to ITLB, that is, when TLB misses, TLB does not return the miss result immediately, but performs Page Table Walk to retrieve the page table entry and then returns.
+The back-end memory access requires non-blocking access to DTLB, that is, when TLB misses, TLB also needs to return the result immediately, whether it is a miss or a hit.
+In the Yanqihu architecture and Nanhu architecture, the TLB body is non-blocking access, and the blocking access of the front-end instruction fetch is completed by the front-end module. The replay, TLB does not store the request information.
 
-新版架构预告：TLB 可以对每个请求端口的阻塞形式进行参数化配置，静态选择阻塞还是非阻塞，一个模块可以同时适应前后端的需求。
+New version architecture preview: TLB can parameterize the blocking form of each request port, statically select blocking or non-blocking, and one module can adapt to the needs of the front and back ends at the same time.
 
-## Sfence.vma 与 ASID
+## Sfence.vma and ASID
 
-Sfence.vma 指令执行时，会先清空 Store Buffer 的全部内容（写回到 DCache 中），之后发出刷新信号到 MMU 的各个部分。刷新信号是单向的，只会持续一拍，没有返回信号。指令最后会刷新整个流水线，从取指开始重新执行。
-Sfence.vma会取消所有 inflight 的请求，包括 Repeater 和 Filter，以及 L2 TLB中的 inflight 请求，并且根据地址和 ASID 刷新 TLB 和 L2TLB 中的缓存的页表。
-全相联部分根据是否命中进行刷新，组相联（直接相联）部分，根据 index 直接刷新。
+When the Sfence.vma instruction is executed, it will first clear all the contents of the Store Buffer (write back to the DCache), and then send a refresh signal to each part of the MMU. The refresh signal is unidirectional and will only last for one beat, with no return signal. The instruction will finally refresh the entire pipeline and re-execute from instruction fetch.
+Sfence.vma will cancel all inflight requests, including Repeater and Filter, as well as inflight requests in L2 TLB, and refresh the cached page tables in TLB and L2TLB according to the address and ASID.
+The fully associative part is refreshed based on whether it hits, and the set associative (direct associative) part is refreshed directly based on the index.
 
-Yanqihu 架构不支持 ASID（Address Space IDentifier），Nanhu 架构添加了对 ASID 的支持，长度为16，可以参数化配置。
-所有 inflight 请求都不携带 ASID 信息，这源于以下几个方面：
+The Yanqihu architecture does not support ASID (Address Space IDentifier), and the Nanhu architecture adds support for ASID, with a length of 16, which can be parameterized.
+All inflight requests do not carry ASID information, which is due to the following reasons:
 
-1. 一般情况下，inflight 请求的 ASID 都与 Satp 的 ASID 域相同
-2. 切换 ASID 时，inflight 请求都是“推测”访问的，是近似“无用”的
+1. Generally, the ASID of the inflight request is the same as the ASID field of the Satp
 
-综合这两个原因，当切换 ASID 时，也将所有的 inflight 全部取消，并且 inflight 不必携带 ASID 信息。
+2. When switching ASID, the inflight request is "speculative" access, which is almost "useless"
 
-## 更新 A/D 位
+Combining these two reasons, when switching ASID, all inflights will be cancelled, and inflight does not need to carry ASID information.
 
-根据手册，页表的 A（Access）和 D（Dirty）位将会需要更新，香山采用报 page fault 例外的方法，由软件进行更新。
+## Update A/D bits
+
+According to the manual, the A (Access) and D (Dirty) bits of the page table will need to be updated. Xiangshan uses the method of reporting page fault exceptions and updating by software.
