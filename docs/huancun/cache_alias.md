@@ -1,11 +1,11 @@
-# Cache 别名问题
+# Cache alias problem
 
-由于在 NanHu 架构中，DCache 和 ICache 都是采用 128KB 的 8 路组相联结构，cache 索引和块偏移所占 bit 数已经超过了页偏移 (4K 页的页偏移为 12 bits)，由此引入了 cache 别名问题：当两个虚页映射到同一个物理页时，两个虚页的别名位 (alias bits) 很有可能是不一样的，如果不做额外处理的话，通过VIPT索引 (Virtual Index Physical Tag) 后这两个虚页会位于 cache 不同的 set，导致归属于同一物理页的物理块在 cache 中缓存了两份，造成一些一致性错误。
+In the NanHu architecture, both DCache and ICache use 128KB 8-way set associative structure, and the number of bits occupied by cache index and block offset has exceeded the page offset (the page offset of 4K page is 12 bits), which introduces the cache alias problem: when two virtual pages are mapped to the same physical page, the alias bits of the two virtual pages are likely to be different. If no additional processing is done, the two virtual pages will be located in different cache sets after VIPT indexing (Virtual Index Physical Tag), resulting in two physical blocks belonging to the same physical page being cached in the cache, causing some consistency errors.
 
 ![](../figs/huancun_cache_alias-1.jpg)
 
-为了让 L1 Cache 继续沿用 VIPT，XiangShan 的缓存系统采用硬件方式解决 cache 别名问题。具体的解决方式是由 L2 Cache 保证一个物理块在上层的一个 VIPT cache 中最多只有一种别名位。
+In order to allow L1 Cache to continue to use VIPT, XiangShan's cache system uses hardware to solve the cache alias problem. The specific solution is that L2 Cache ensures that a physical block has at most one alias bit in a VIPT cache at the upper layer.
 
-下面举一个例子说明 L2 如何解决 cache 别名问题。如下图所示，DCache 中有有一个虚地址为0x0000 的块，虚地址 0x0000 和 0x1000 映射到了同一个物理地址，且这两个地址的别名是不一样的；此时 DCache 向 L2 Acquire 了地址为 0x1000 的块，并在 Acquire 请求的 user 域中记录了别名 (0x1)，L2 在读目录后发现请求命中，但是 Acquire 的别名 (0x1) 和 L2 记录的 DCache 在该物理地址的别名 (0x0) 不同，于是 L2 会发起一个 Probe 子请求，并在 Probe 的 data 域中记录要 probe 下来的别名 (0x0)；Probe 子请求完成后，L2 再将这个块返回给 DCache，并将 L2 client directory 中的别名改为 (0x1)。
+The following is an example to illustrate how L2 solves the cache alias problem. As shown in the figure below, there is a block with a virtual address of 0x0000 in DCache. Virtual addresses 0x0000 and 0x1000 are mapped to the same physical address, and the aliases of these two addresses are different. At this time, DCache acquires the block with address 0x1000 from L2 and records the alias (0x1) in the user field of the acquire request. After reading the directory, L2 finds that the request is successful, but the alias (0x1) of the acquire is different from the alias (0x0) of the DCache at the physical address recorded by L2. Therefore, L2 will initiate a probe sub-request and record the alias (0x0) to be probed in the data field of the probe. After the probe sub-request is completed, L2 returns the block to DCache and changes the alias in the L2 client directory to (0x1).
 
 ![](../figs/huancun_cache_alias-2.jpg)
