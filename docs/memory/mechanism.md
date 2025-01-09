@@ -94,7 +94,7 @@ Cuando el dcache falla pero el pase hacia adelante se ejecuta por completo, el r
 
 ## Violación de carga de la tienda
 
-Esta sección describe la detección y recuperación de violaciones de carga de almacenamiento. La verificación de violación de carga comienza cuando una instrucción de almacenamiento llega a la etapa 1. Si se encuentra una violación de carga durante la verificación, el almacenamiento que activó la violación de carga no se marca como violación de carga en El ROB. Estado *Comprometerse*. Al mismo tiempo, la operación de reversión se activará inmediatamente, sin esperar a que se confirme la instrucción de almacenamiento que activó la violación de carga. La sección de cola de carga describe el proceso detallado de [verificación y redirección] (../memory/lsq/load_queue.md#store---load-%E8%BF%9D%E4%BE%8B%E6%A3%80%E6%9F%A5%E7%9B%B8%E5%85%B3%E6%9C%BA%E5%88%B6).
+Esta sección describe la detección y recuperación de violaciones de carga de almacenamiento. La verificación de violación de carga comienza cuando una instrucción de almacenamiento llega a la etapa 1. Si se encuentra una violación de carga durante la verificación, el almacenamiento que activó la violación de carga no se marca como violación de carga en El ROB. Estado *Comprometerse*. Al mismo tiempo, la operación de reversión se activará inmediatamente, sin esperar a que se confirme la instrucción de almacenamiento que activó la violación de carga. La sección de cola de carga describe el proceso detallado de [verificación y redirección](../memory/lsq/load_queue.md#store---load-%E8%BF%9D%E4%BE%8B%E6%A3%80%E6%9F%A5%E7%9B%B8%E5%85%B3%E6%9C%BA%E5%88%B6).
 
 ## Violación de carga de carga
 
