@@ -1,96 +1,94 @@
-# 香山项目介绍导引
+# Introducción y guía del proyecto Xiangshan
 
-## 一、香山是什么
+## 1. ¿Qué es Xiangshan?
+Xiangshan es un procesador RISC-V de código abierto y alto rendimiento basado en el lenguaje de diseño de hardware Chisel y admite el conjunto de instrucciones RV64GC. Durante el desarrollo del procesador Xiangshan, se utilizó una gran cantidad de herramientas de código abierto, incluidas Chisel, Verilator y GTKwave, para implementar herramientas básicas para el desarrollo del procesador, como verificación diferencial, instantáneas de simulación y puntos de control RISC-V, estableciendo un conjunto de Procesos de desarrollo de procesadores ágiles basados ​​en herramientas de código abierto, incluido el diseño, la implementación y la verificación.
 
-香山是一款开源的高性能 RISC-V 处理器，基于 Chisel 硬件设计语言实现，支持 RV64GC 指令集。在香山处理器的开发过程中，使用了包括 Chisel、Verilator、GTKwave 等在内的大量开源工具，实现了差分验证、仿真快照、RISC-V 检查点等处理器开发的基础工具，建立起了一套包含设计、实现、验证等在内的基于全开源工具的处理器敏捷开发流程。
-
-**香山项目链接**：
+**Enlace del proyecto Xiangshan**：
 
 - GitHub：[https://github.com/OpenXiangShan](https://github.com/OpenXiangShan)
 
 - 码云：[https://gitee.com/OpenXiangShan](https://gitee.com/OpenXiangShan)
 
 
-**香山项目仓库介绍**：
+**Introducción al almacén del proyecto Xiangshan**：
 
-[**XiangShan**](https://github.com/OpenXiangShan/XiangShan)：香山处理器实现
+[**XiangShan**](https://github.com/OpenXiangShan/XiangShan)：Implementación del procesador Xiangshan
 
-[**XiangShan-doc**](https://github.com/OpenXiangShan/XiangShan-doc)：香山处理器文档，包括设计文档、公开报告以及对错误新闻的澄清
+[**XiangShan-doc**](https://github.com/OpenXiangShan/XiangShan-doc)：Documentos del procesador Xiangshan, incluidos documentos de diseño, informes públicos y aclaraciones de noticias erróneas.
+[**NEMU**](https://github.com/OpenXiangShan/NEMU/tree/master)：Un intérprete ISA de alto rendimiento con una eficiencia cercana a QEMU, aquí hay uno[Vídeo de introducción](https://www.bilibili.com/video/BV1Zb4y1k7RJ)
 
-[**NEMU**](https://github.com/OpenXiangShan/NEMU/tree/master)：一个效率接近 QEMU 的高性能 ISA 解释器，这里有一个[介绍视频](https://www.bilibili.com/video/BV1Zb4y1k7RJ)
+[**nexus-am**](https://github.com/OpenXiangShan/nexus-am)：Máquina abstracta, que proporciona el entorno de ejecución para los programas. Hay una[Breve introducción](https://nju-projectn.github.io/ics-pa-gitbook/ics2020/2.3.html)
 
-[**nexus-am**](https://github.com/OpenXiangShan/nexus-am)：Abstract Machine，提供程序的运行时环境，这里有一个[简单的介绍](https://nju-projectn.github.io/ics-pa-gitbook/ics2020/2.3.html)
+[**DRAMsim3**](https://github.com/OpenXiangShan/DRAMsim3)：Simular el comportamiento de la memoria a nivel de ciclo
 
-[**DRAMsim3**](https://github.com/OpenXiangShan/DRAMsim3)：cycle-level 地模拟内存的行为
+[**env-scripts**](https://github.com/OpenXiangShan/env-scripts)：Algunos archivos de script, incluido análisis de rendimiento, reemplazo de módulo y análisis de tiempo, etc.
 
-[**env-scripts**](https://github.com/OpenXiangShan/env-scripts)：一些脚本文件，包括性能分析、模块替换和时序分析等
+Y otros repositorios incluyen **riscv-linux**, **riscv-pk**, **riscv-torture** y así sucesivamente.
 
-以及其他仓库包括 **riscv-linux** ，**riscv-pk** ，**riscv-torture** 等等。
-
-## 二、香山处理器目录结构
+## 2. Estructura del directorio del procesador Xiangshan
 
 ```
 .
-├── debug                # 一些跑测试的常用命令，写成了脚本的形式
-├── scripts              # 生成 Verilog 及仿真使用的一些脚本
-├── src                  # 结构设计与验证代码
-│   ├── main               # 结构设计代码
+├── debug                # Algunos comandos comunes para ejecutar pruebas se escriben en forma de scripts.
+├── scripts              # Generar Verilog y algunos scripts para simulación
+├── src                  # Código de diseño y verificación estructural
+│   ├── main               # Código de diseño estructural
 │   │   └── scala
-│   │       ├── bus            # 一些总线工具
-│   │       ├── device         # 仿真用的一些外设
-│   │       ├── difftest       # 差分测试接口描述
-│   │       ├── system         # SoC 的描述
-│   │       ├── top            # 顶层文件
-│   │       ├── utils          # 一些基础硬件工具库
-│   │       ├── xiangshan      # 香山 CPU 部分的设计代码
-│   │       └── xstransforms   # 一些 FIRRTL Transforms
-│   └── test               # 验证代码
-│       ├── csrc             # 仿真用 C/C++ 代码
-│       │   ├── common         # 仿真时的通用组件
-│       │   ├── difftest       # 差分测试的 C/C++ 接口实现
-│       │   ├── vcs            # VCS 仿真时使用的文件
-│       │   └── verilator      # Verilator 仿真时使用的文件
-│       ├── scala            # 基于 ChiselTest 实现的一些单元测试
-│       │   ├── cache          # Cache 单元测试
+│   │       ├── bus            # Algunas herramientas de bus
+│   │       ├── device         # AL comparte Nash y RAM IE y dijo que no
+│   │       ├── difftest       # Descripción de la interfaz de prueba diferencial
+│   │       ├── system         # Descripción de SoC
+│   │       ├── top            # Archivo de nivel superior
+│   │       ├── utils          # Algunas bibliotecas de herramientas de hardware básicas
+│   │       ├── xiangshan      # El código de diseño de la pieza de CPU Xiangshan
+│   │       └── xstransforms   # Algunas transformaciones de FIRRTL
+│   └── test               # Código de verificación
+│       ├── csrc             # Código C/C++ para simulación
+│       │   ├── common         # Componentes comunes en la simulación
+│       │   ├── difftest       # Implementación de la interfaz C/C++ de prueba diferencial
+│       │   ├── vcs            # Archivos utilizados durante la simulación VCS
+│       │   └── verilator      # Archivos utilizados por la simulación de Verilator
+│       ├── scala            # Algunas pruebas unitarias basadas en ChiselTest
+│       │   ├── cache          # Prueba de unidad de caché
 │       │   ├── top
-│       │   └── xiangshan      # 香山核内部模块单元测试
+│       │   └── xiangshan      # Prueba de la unidad del módulo interno del núcleo de Xiangshan
 │       ├── testcase
 │       │   ├── Makefile
 │       │   └── tests
-│       └── vsrc             # 仿真用 Verilog 代码
+│       └── vsrc             # Código Verilog para simulación
 │           ├── common
 │           └── vcs
-├── ready-to-run         # 预先编译好的 nemu 动态链接库，和一些负载
-├── rocket-chip          # 用来获取 Diplomacy 框架（等待上游拆分）
-├── berkeley-hardfloat   # 修改后的 hardfloat，目前作为香山的 FPU 使用
-├── block-inclusivecache # 修改后的 SiFive InclusiveCache，目前作为香山的 L2 及 L3 使用
-└── chiseltest           # ChiselTest 框架源码
+├── ready-to-run         # Biblioteca de enlaces dinámicos nemu precompilada y algunas cargas
+├── rocket-chip          # Se utiliza para obtener el marco de Diplomacia (pendiente de división ascendente)
+├── berkeley-hardfloat   # Flotador duro modificado, actualmente utilizado como FPU de Xiangshan
+├── block-inclusivecache # El SiFive InclusiveCache modificado se utiliza actualmente como L2 y L3 de Xiangshan
+└── chiseltest           # Código fuente del marco ChiselTest
 ```
 
-## 三、香山处理器架构设计
+## 3. Diseño de la arquitectura del procesador Xiangshan
 
-香山处理器是乱序六发射结构设计，前端包括取指单元、分支预测单元、指令缓冲等单元，顺序取指。后端包括译码、重命名、重定序缓冲、保留站、整型/浮点寄存器堆、整型/浮点运算单元。我们将访存子系统分离开，包括两条 load 流水线和两条 store 流水线，以及独立的 load 队列和 store 队列，Store Buffer等。缓存包括I\$、D\$、L1+\$、L2\$、TLB和预取器等模块。各部分的在流水线中的位置以及参数配置可以从下图中获得。
+El procesador Xiangshan está diseñado con una estructura de seis elementos fuera de orden. El front-end incluye una unidad de búsqueda de instrucciones, una unidad de predicción de bifurcaciones, un búfer de instrucciones y otras unidades, y busca instrucciones de forma secuencial. El back-end incluye decodificación, cambio de nombre, reordenamiento de buffer, estación de reserva, archivo de registro de punto flotante/entero y unidad de operación de punto flotante/entero. Separamos el subsistema de acceso a la memoria, incluyendo dos pipelines de carga y dos pipelines de almacenamiento, así como colas de carga y colas de almacenamiento independientes, Store Buffer, etc. La caché incluye módulos como I\$, D\$, L1+\$, L2\$, TLB y prefetcher. La posición de cada parte en la tubería y la configuración de los parámetros se pueden obtener de la siguiente figura.
 
-![香山处理器结构图](images/xs-arch-simple.svg)
+![Diagrama de la estructura del procesador Xiangshan](images/xs-arch-simple.svg)
 
-香山处理器的具体结构设计见后续介绍
+Más adelante se presenta el diseño estructural específico del procesador Xiangshan.
 
-## 四、单元测试
+## 4. Pruebas unitarias
 
-我们基于 ChiselTest 实现了 Agent-Faker Cache 测试框架，其设计思路类似于 UVM，目前应用于 Dcache、L2Cache 和 TLB。
+Implementamos el marco de pruebas de caché Agent-Faker basado en ChiselTest. Su concepto de diseño es similar a UVM y actualmente se aplica a Dcache, L2Cache y TLB.
 
 ![Agent-Faker](images/AgentFaker.png)
 
-## 五、仿真测试
+## 5. Prueba de simulación
 
-香山处理器主要使用 verilator 进行仿真，并模拟 uart 和 sd 卡等外设。仿真时和模拟器 NEMU 做运行时对比，并将处理器的时钟中断等信息传递给模拟器，指导模拟器在关键选择上和处理器保持一致，提高仿真的灵活度。
+El procesador Xiangshan utiliza principalmente verilator para simulación y simula periféricos como uart y tarjeta SD. Durante la simulación, se realiza una comparación del tiempo de ejecución con el simulador NEMU, y se pasa información como la interrupción del reloj del procesador al simulador, lo que guía al simulador para que sea coherente con el procesador en las elecciones clave, mejorando así la flexibilidad de la simulación.
 
-![Diff-test](images/difftest.png)
+![Prueba de diferencias](images/difftest.png)
 
-当处理器和模拟器行为不一致时，仿真程序将会停止，通过查看波形和日志的方式进行错误分析。我们开发了 Wave Terminator，将低层次语义的波形提取成具有高层次语义的日志。另外，我们还开发了日志查看器 [LogViewer](https://github.com/OpenXiangShan/env-scripts/tree/main/logviewer)，从而更方便的查看日志。
+Cuando los comportamientos del procesador y del simulador son inconsistentes, el programa de simulación se detendrá y se podrá realizar un análisis de errores visualizando formas de onda y registros. Desarrollamos Wave Terminator para extraer formas de onda con semántica de bajo nivel en registros con semántica de alto nivel. Además, también hemos desarrollado un visor de registros [LogViewer](https://github.com/OpenXiangShan/env-scripts/tree/main/logviewer) para facilitar la visualización de los registros.
 
-## 六、性能评估
+## 6. Evaluación del desempeño
 
-在仿真时，每个模块都可以自由地打印计数器，可以选择实时打印计数器以及在仿真结束时打印计数器。通过[脚本工具](https://github.com/OpenXiangShan/env-scripts/blob/main/perf/perf.py)对性能计数器进行分析，我们还开发了可视化工具对性能计数器进行分析。
+Cada módulo puede imprimir contadores libremente durante la simulación, con la opción de imprimir contadores en tiempo real y al final de la simulación. Los contadores de rendimiento se analizan mediante la [herramienta de script](https://github.com/OpenXiangShan/env-scripts/blob/main/perf/perf.py). También desarrollamos una herramienta de visualización para analizar los contadores de rendimiento.
 
-为了测试 SPEC 基准测试的性能，以及对 SPEC 程序进行性能分析，使用 NEMU 生成 SPEC 程序的 SimPoint，进行大规模的并行测试，快速得出 SPEC 分数。另外，SPEC 片段也可以用于开发时的性能评估。
+Para probar el rendimiento de los puntos de referencia SPEC y realizar análisis de rendimiento en programas SPEC, se utiliza NEMU para generar SimPoint de programas SPEC, realizar pruebas paralelas a gran escala y obtener rápidamente puntajes SPEC. Además, los fragmentos SPEC se pueden utilizar para evaluar el rendimiento durante el desarrollo.
