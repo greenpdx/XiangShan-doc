@@ -1,76 +1,76 @@
-# 香山项目导引
+#Guía del proyecto Xiangshan
 
-## 香山项目链接
+## Enlace del proyecto Xiangshan
 
-- GitHub：[https://github.com/OpenXiangShan](https://github.com/OpenXiangShan)
+- GitHub: [https://github.com/OpenXiangShan](https://github.com/OpenXiangShan)
 
-- 码云/Gitee：[https://gitee.com/OpenXiangShan](https://gitee.com/OpenXiangShan)
+- Gitee: [https://gitee.com/OpenXiangShan](https://gitee.com/OpenXiangShan)
 
-- 确实/GitLink：[https://gitlink.org.cn/OpenXiangShan/XiangShan](https://gitlink.org.cn/OpenXiangShan/XiangShan)
+- Enlace de Git: [https://gitlink.org.cn/OpenXiangShan/XiangShan](https://gitlink.org.cn/OpenXiangShan/XiangShan)
 
-## 香山文档链接
+## Enlace al documento de Xiangshan
 
-- 处理器核介绍：[https://xiangshan-doc.readthedocs.io/zh_CN/latest/arch/](https://xiangshan-doc.readthedocs.io/zh_CN/latest/arch/)
+- Introducción al núcleo del procesador: [https://xiangshan-doc.readthedocs.io/zh_CN/latest/arch/](https://xiangshan-doc.readthedocs.io/zh_CN/latest/arch/)
 
-- 敏捷开发框架
+- Marco de desarrollo ágil
 
-    - 使用说明：[https://xiangshan-doc.readthedocs.io/zh_CN/latest/tools/xsenv/](https://xiangshan-doc.readthedocs.io/zh_CN/latest/tools/xsenv/)
+ - Instrucciones de uso: [https://xiangshan-doc.readthedocs.io/zh_CN/latest/tools/xsenv/](https://xiangshan-doc.readthedocs.io/zh_CN/latest/tools/xsenv/)
 
-    - 工具介绍：[https://xiangshan-doc.readthedocs.io/zh_CN/latest/tools/difftest/](https://xiangshan-doc.readthedocs.io/zh_CN/latest/tools/difftest/)
+ - Introducción a la herramienta: [https://xiangshan-doc.readthedocs.io/zh_CN/latest/tools/difftest/](https://xiangshan-doc.readthedocs.io/zh_CN/latest/tools/difftest/)
 
-    - Troubleshooting：[https://xiangshan-doc.readthedocs.io/zh_CN/latest/tools/troubleshoot/](https://xiangshan-doc.readthedocs.io/zh_CN/latest/tools/troubleshoot/)
+ - Solución de problemas: [https://xiangshan-doc.readthedocs.io/zh_CN/latest/tools/troubleshoot/](https://xiangshan-doc.readthedocs.io/zh_CN/latest/tools/troubleshoot/)
 
-- 工具链编译：[https://xiangshan-doc.readthedocs.io/zh_CN/latest/compiler/gnu_toolchain/](https://xiangshan-doc.readthedocs.io/zh_CN/latest/compiler/gnu_toolchain/)
+- Compilación de la cadena de herramientas: [https://xiangshan-doc.readthedocs.io/zh_CN/latest/compiler/gnu_toolchain/](https://xiangshan-doc.readthedocs.io/zh_CN/latest/compiler/gnu_toolchain/)
 
-## 香山项目仓库介绍
+## Introducción al almacén del proyecto Xiangshan
 
-香山本身的 RTL 代码：
+El código RTL de Xiangshan en sí:
 
-* [**XiangShan**](https://github.com/OpenXiangShan/XiangShan)：香山处理器实现
+* [**XiangShan**](https://github.com/OpenXiangShan/XiangShan): Implementación del procesador XiangShan
 
-* [**HuanCun**](https://github.com/OpenXiangShan/HuanCun)：香山处理器的非阻塞 L2/L3 缓存
+* [**HuanCun**](https://github.com/OpenXiangShan/HuanCun): caché L2/L3 sin bloqueo para procesadores XiangShan
 
-* [**FuDian**](https://github.com/OpenXiangShan/fudian)：香山处理器的浮点部件
+* [**FuDian**](https://github.com/OpenXiangShan/fudian): Unidad de punto flotante del procesador Xiangshan
 
-香山的仿真环境：
+Entorno de simulación de Xiangshan:
 
-* [**Difftest**](https://github.com/OpenXiangShan/XiangShan)：香山使用的处理器协同仿真框架
+* [**Difftest**](https://github.com/OpenXiangShan/XiangShan): Marco de co-simulación de procesador utilizado por XiangShan
 
-* [**NEMU**](https://github.com/OpenXiangShan/NEMU/tree/master)：一个效率接近 QEMU 的高性能 ISA 解释器，这里有一个[介绍视频](https://www.bilibili.com/video/BV1Zb4y1k7RJ)
+* [**NEMU**](https://github.com/OpenXiangShan/NEMU/tree/master): Un intérprete ISA de alto rendimiento con una eficiencia cercana a la de QEMU. Aquí hay un [video de introducción](https:// (www.bilibili.com/video/BV1Zb4y1k7RJ)
 
-* [**nexus-am**](https://github.com/OpenXiangShan/nexus-am)：Abstract Machine，提供程序的运行时环境，这里有一个[简单的介绍](https://nju-projectn.github.io/ics-pa-gitbook/ics2020/2.3.html)
+* [**nexus-am**](https://github.com/OpenXiangShan/nexus-am): máquina abstracta que proporciona el entorno de ejecución del programa. Aquí hay una [breve introducción](https://nju -proyecton.github.io/ics-pa-gitbook/ics2020/2.3.html)
 
-* [**DRAMsim3**](https://github.com/OpenXiangShan/DRAMsim3)：Cycle-level 地模拟内存的行为，针对香山项目进行了配置
+* [**DRAMsim3**](https://github.com/OpenXiangShan/DRAMsim3): Simulación a nivel de ciclo del comportamiento de la memoria, configurada para el proyecto Xiangshan
 
-* [**env-scripts**](https://github.com/OpenXiangShan/env-scripts)：一些脚本文件，包括性能分析、模块替换和时序分析等
+* [**env-scripts**](https://github.com/OpenXiangShan/env-scripts): algunos archivos de script, incluido análisis de rendimiento, reemplazo de módulo y análisis de tiempo, etc.
 
-* [**xs-env**](https://github.com/OpenXiangShan/xs-env)：香山处理器前端开发环境部署脚本
+* [**xs-env**](https://github.com/OpenXiangShan/xs-env): secuencia de comandos de implementación del entorno de desarrollo del frontend del procesador Xiangshan
 
-香山的文档：
+Documentos de Xiangshan:
 
-* [**XiangShan-doc**](https://github.com/OpenXiangShan/XiangShan-doc)：香山处理器文档，包括设计文档、公开报告以及对错误新闻的澄清
+* [**XiangShan-doc**](https://github.com/OpenXiangShan/XiangShan-doc) : Documentación del procesador XiangShan, incluidos documentos de diseño, informes públicos y aclaraciones sobre noticias erróneas.
 
-香山项目下的其他仓库还包括 **riscv-linux** ，**riscv-pk** ，**riscv-torture** 等等。
+Otros repositorios bajo el proyecto Xiangshan incluyen **riscv-linux**, **riscv-pk**, **riscv-torture**, etc.
 
-## 香山处理器目录结构
+## Estructura del directorio del procesador Xiangshan
 
-[**XiangShan**](https://github.com/OpenXiangShan/XiangShan) 主仓库的目录结构如下：
+[**XiangShan**](https://github.com/OpenXiangShan/XiangShan) La estructura de directorios del almacén principal es la siguiente:
 
 ```
 .
-├── scripts              # 生成 Verilog 及仿真使用的一些脚本
-├── src                  # 结构设计与验证代码
-│   └── main               # 结构设计代码
-│       └── scala
-│           ├── device         # 仿真用的一些外设
-│           ├── system         # SoC 的描述
-│           ├── top            # 顶层文件
-│           ├── utils          # 一些基础硬件工具库
-│           ├── xiangshan      # 香山 CPU 部分的设计代码
-│           └── xstransforms   # 一些 FIRRTL Transforms
-├── fudian               # 香山浮点子模块
-├── huancun              # 香山 L2/L3 缓存子模块
-├── difftest             # 香山协同仿真框架
-├── ready-to-run         # 预先编译好的 nemu 动态链接库，和一些负载
-└── rocket-chip          # 用来获取 Diplomacy 框架（等待上游拆分）
+├── scripts   # Generar algunos scripts para Verilog y simulación
+├── src       # Código de diseño estructural y verificación
+│   └── principal # Código de diseño estructural
+│      └── escala
+│      ├── dispositivo # Algunos periféricos utilizados para simulación
+│ ├── sistema # Descripción del SoC
+│      ├── top # Archivo de nivel superior
+│ ├── utils # Algunas bibliotecas de herramientas de hardware básicas
+│      ├── xiangshan # Código de diseño de la parte de CPU de Xiangshan
+│      └── xstransforms # Algunas transformaciones FIRRTL
+├── fudian # Submódulo de punto flotante de Xiangshan
+├── huancun # Submódulo de caché L2/L3 de Xiangshan
+├── difftest # Marco de simulación colaborativa de Xiangshan
+├── lista para ejecutar # Biblioteca de vínculos dinámicos nemu precompilada y algunas cargas útiles
+└── rocket-chip # Se utiliza para obtener el marco de Diplomacia (esperando la división ascendente)
 ```
