@@ -1,7 +1,7 @@
-# DataStorage
+# Almacenamiento de datos
 
-`DataStorage`模块负责cache数据的存储与读写，
-根据Tilelink各通道特性，`DataStorage`模块共有2个读口(`sourceC_r`, `sourceD_r`)，
-3个写口(`sinkD_w`, `sourceD_w`, `sinkC_w`)，
-为了提高读写并发性，该模块可以参数化配置内部bank数量，不同bank之间可以并行读写。
-此外，该模块还支持为SRAM读出的数据进行参数化的加拍，从而达到更高的频率要求。
+El módulo `DataStorage` es responsable del almacenamiento, lectura y escritura de datos de caché.
+Según las características de cada canal Tilelink, el módulo `DataStorage` dispone de dos puertos de lectura (`sourceC_r`, `sourceD_r`).
+3 puertos de escritura (`sinkD_w`, `sourceD_w`, `sinkC_w`),
+Para mejorar la concurrencia de lectura y escritura, el módulo puede parametrizar el número de bancos internos, y diferentes bancos pueden leer y escribir en paralelo.
+Además, el módulo también admite el overclocking parametrizado de los datos leídos desde la SRAM para lograr requisitos de frecuencia más altos.
