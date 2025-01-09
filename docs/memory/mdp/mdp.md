@@ -1,41 +1,39 @@
-# 访存依赖预测
+# Predicción de dependencia de acceso a memoria
 
-这一章描述香山处理器访存违例预测预测器的整体架构。
+Este capítulo describe la arquitectura general del predictor de predicción de violaciones de acceso a memoria del procesador Xiangshan.
 
-香山处理器在 decode 附近根据 PC 预测访存依赖. 目前的代码支持两种预测方式:
+El procesador Xiangshan predice las dependencias de acceso a la memoria en función de la decodificación cercana a la PC. El código actual admite dos métodos de predicción:
 
-* Load Wait Table[^21264]
-* Store Sets[^storesets] 的变种
+* Cargar tabla de espera[^21264]
+* Variantes de conjuntos de tiendas[^storesets]
 
-南湖架构使用了与 Store Sets 类似的访存依赖预测机制. 如果预测到一条 load 指令可能违例, 则这条 load 指令需要在保留站中等待到之前的 store 都发射之后才能发射.
+La arquitectura de Southlake utiliza un mecanismo de predicción de dependencia de memoria similar a Store Sets. Si se predice que es probable que una instrucción de carga viole la excepción, la instrucción de carga debe esperar en la estación de reserva hasta que se emitan todos los almacenamientos anteriores antes de poder emitirse.
 
-## 南湖的访存违例预测器
+## Predictor de violación de acceso a memoria de Southlake
 
-### 依赖预测
+### Predicción de dependencia
 
-* 整体思路基于 Store Sets, 实现了 Store Sets 中的两个表: SSIT 和 LFST
-* 南湖架构只预测 store addr 未就绪引起的违例
-* 一个 Store Set 会同时追踪**多个** inflight 的 store, 只有这里所有的 store 都执行完成后, 依赖于这个 Store Set 的 load 才会被预测为没有依赖
-* SSIT 的查询在 rename 进行. LFST 的查询在 dispatch 进行
+* La idea general se basa en Store Sets, y se implementan dos tablas en Store Sets: SSIT y LFST
+* La arquitectura de Southlake solo predice violaciones causadas por una dirección de tienda que no está lista
+* Un conjunto de almacenamiento rastreará varios almacenamientos en curso al mismo tiempo. Solo cuando se ejecuten todos los almacenamientos aquí, se predecirá que la carga que depende de este conjunto de almacenamiento no tiene dependencia
+* Las consultas SSIT se realizan en el cambio de nombre. Las consultas LFST se realizan en el envío.
 
-### 依赖处理
+### Manejo de dependencias
 
-* 南湖架构的访存违例预测器使用 robIdx 追踪指令前后关系
-* 与原始 Store Sets 不同, **不要求同一个 Store Set 内的 store 指令顺序执行**
-* 预测器会**尝试预测 load 指令是否可能依赖多个 store 的结果**. 如果预测器认为 load 指令不依赖多个 store 的结果, 那么在这个 load 前的最后一个依赖的 store 地址产生后, 这条 load 指令就可以被发射. 否则, 这条 load 只有在它被预测依赖的所有 store 都产生地址之后才会被发射.
+* El predictor de violación de acceso a memoria de la arquitectura Southlake utiliza robIdx para rastrear el contexto de las instrucciones.
+* A diferencia de los conjuntos de tiendas originales, **no es necesario ejecutar secuencialmente las instrucciones de tienda dentro del mismo conjunto de tiendas**
+* El predictor **intentará predecir si la instrucción de carga puede depender de los resultados de múltiples almacenamientos**. Si el predictor piensa que la instrucción de carga no depende de los resultados de múltiples almacenamientos, entonces después de la dirección del último dependiente Almacenar antes de que se genere esta carga. Se puede emitir esta instrucción de carga. De lo contrario, esta carga no se emitirá hasta que todos los almacenes de los que se prevé que dependa hayan generado direcciones.
 
-### 预测器更新
+### Actualización del predictor
 
-在发生 store - load 违例时, 触发违例的指令的 PC 会被传递到访存违例预测器以进行更新. 每过一个刷新间隔, 违例预测器中的信息会被无效化. 刷新间隔可以使用 `slvpredctl` CSR 寄存器配置.
+Cuando se produce una violación de almacenamiento, el PC de la instrucción que desencadenó la violación se pasa al predictor de violación de acceso a memoria para su actualización. La información en el predictor de violación se invalida después de cada intervalo de actualización. El intervalo de actualización se puede configurar utilizando `slvpredctl " Configuración del registro CSR.
 
-<!-- 违例预测器刷新时会直接将对应项无效化. 后面会考虑加入置信度的设计, 只将置信度低的刷掉. -->
+<!-- Cuando se actualiza el predictor de infracciones, el elemento correspondiente se invalida directamente. Más adelante, consideraremos agregar un diseño de nivel de confianza para eliminar solo los elementos con baja confianza. -->
 
-<!-- 目前正常执行的 load 的结果不会反馈给预测器进行更新, 下一版本中将考虑相关的设计. -->
+<!-- Actualmente, el resultado de la carga normal no se enviará al predictor para su actualización. El diseño correspondiente se considerará en la próxima versión. -->
 
-## 引用
+## Referencias
 
-[^21264]: Kessler, Richard E. "The alpha 21264 microprocessor." IEEE micro 19.2 (1999): 24-36.
+[^21264]: Kessler, Richard E. "El microprocesador alfa 21264". IEEE micro 19.2 (1999): 24-36.
 
-[^storesets]: Chrysos, George Z., and Joel S. Emer. "Memory dependence prediction using store sets." ACM SIGARCH Computer Architecture News 26.3 (1998): 142-153.
-
-
+[^storesets]: Chrysos, George Z. y Joel S. Emer. "Predicción de dependencia de memoria mediante conjuntos de almacenamiento". ACM SIGARCH Computer Architecture News 26.3 (1998): 142-153.
