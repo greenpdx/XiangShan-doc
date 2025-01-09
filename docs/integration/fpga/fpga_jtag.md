@@ -1,4 +1,4 @@
-## 1. Instale [J-Link](https://baike.baidu.com/item/jlink%E4%BB%BF%E7%9C%9F%E5%99%A8/10410763#:~:text= Enlace J%E4%B8%BA%E5%BE%B7,%E4%BB%A5%E4%BF%9D%E9%9A%9C%E6%82%A8%E7%9A%84%E6%9D %83%E7%9B%8A%E3%80%82) (emulador JTAG desarrollado por SEGGER)
+## 1. Instale [J-Link][J-Link](https://baike.baidu.com/item/jlink%E4%BB%BF%E7%9C%9F%E5%99%A8/10410763#:~:text=J-Link%E4%B8%BA%E5%BE%B7,%E4%BB%A5%E4%BF%9D%E9%9A%9C%E6%82%A8%E7%9A%84%E6%9D%83%E7%9B%8A%E3%80%82) (emulador JTAG desarrollado por SEGGER)
 
 ### 1.1 Instalar el paquete de software J-Link
 
