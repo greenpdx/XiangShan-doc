@@ -1,4 +1,4 @@
-#XiangShan-doc
+# XiangShan-doc
 Documentación de XiangShan
 
 Este es el repositorio de documentos oficial de Xiangshan.
