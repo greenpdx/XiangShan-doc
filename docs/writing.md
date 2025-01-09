@@ -1,38 +1,38 @@
-# 这是什么？
+# ¿Qué es esto?
 
-这是使用 [mkdocs](https://www.mkdocs.org/) 工具构建出来的香山文档。该工具可以将 markdown 格式的文档转化为网页并以美观的方式展现出来。经过 mkdocs 构建出来的工程可以被 readthedocs 托管到互联网上以供访问。[Chipyard](https://chipyard.readthedocs.io/en/stable/index.html)、[BOOM](https://docs.boom-core.org/) 等项目均以此种方式公开文档。（略有区别的是，他们使用的是 rst 格式的书写规范，而我们可能更倾向于 markdown）
+Esta es la documentación de Xiangshan creada con la herramienta [mkdocs](https://www.mkdocs.org/). Esta herramienta puede convertir documentos en formato Markdown en páginas web y mostrarlos de una manera atractiva. Los proyectos creados con mkdocs pueden alojarse en Internet mediante readthedocs para facilitar el acceso. Proyectos como [Chipyard](https://chipyard.readthedocs.io/en/stable/index.html) y [BOOM](https://docs.boom-core.org/) hacen públicos sus documentos de esta manera. (La ligera diferencia es que ellos utilizan el formato estándar de escritura RST, mientras que nosotros preferimos Markdown)
 
-# 添加新内容的流程
+# Proceso para agregar nuevo contenido
 
-该文档与 Github 上的 [XiangShan-doc](https://github.com/OpenXiangShan/XiangShan-doc) 工程绑定。每当 `main` 分支接收到 git push 更新后，网页会自动重构展示新内容。
+Este documento está incluido en el proyecto [XiangShan-doc](https://github.com/OpenXiangShan/XiangShan-doc) en Github. Cada vez que la rama principal recibe una actualización git push, la página web se reconstruye automáticamente para mostrar el nuevo contenido.
 
-因此，如果要添加新内容，请按照如下的步骤：
+Entonces, si deseas agregar contenido nuevo, sigue estos pasos:
 
-- 克隆 [XiangShan-doc](https://github.com/OpenXiangShan/XiangShan-doc) 项目。
-- 在本地安装 mkdocs 环境（参阅 [MkDocs Installation](https://www.mkdocs.org/user-guide/installation/)）
-- 在本地安装 Material for MkDocs 主题 （参阅 [Material for MkDocs](https://squidfunk.github.io/mkdocs-material/getting-started/)）(TLDR: `pip install -r docs/requirements.txt`)
-- 在本地修改文档内容
-- 通过 `mkdocs serve` 命令在本地预览文档，在浏览器中查看是否符合预期
-- `git push`` 到远端
+- Clonar el proyecto [XiangShan-doc](https://github.com/OpenXiangShan/XiangShan-doc).
+- Instalar el entorno mkdocs localmente (ver [Instalación de MkDocs](https://www.mkdocs.org/user-guide/installation/))
+- Instalar el tema Material para MkDocs localmente (ver [Material para MkDocs](https://squidfunk.github.io/mkdocs-material/getting-started/)) (TLDR: pip install -r docs/requirements.txt)
+- Modificar el contenido del documento localmente
+- Utilice el comando mkdocs serve para obtener una vista previa de la documentación localmente y verificar si cumple con sus expectativas en el navegador.
+-  `git push`` al control remoto
 
-# 项目结构
+# Estructura del proyecto
 
-mkdocs 项目结构非常简单，在根目录下有一个 mkdocs.yml 文件用于记录配置信息。其中我们需要重点关注其中的 nav 子项，它决定了整个文档在网页上展现的目录结构，可根据情况酌情修改；根目录下的 docs 文件夹中保存了 markdown 格式的文档，这也是我们需要添加或修改的实际内容。
+La estructura del proyecto mkdocs es muy sencilla. Hay un archivo mkdocs.yml en el directorio raíz para registrar la información de configuración. Necesitamos centrarnos en el subelemento nav, que determina la estructura de directorio de todo el documento que se muestra en la página web y se puede modificar según corresponda; la carpeta docs debajo del directorio raíz guarda los documentos en formato markdown, que es también lo que Necesitamos agregar o el contenido real de la modificación.
 
-# Material for MkDocs
+# Material para MkDocs
 
 我们使用 Material for MkDocs 基于以下的原因：
 
-1. 更好的多级标题支持
-1. 对导出为 pdf 友好
-1. 可以整的花活比较多，参见：https://squidfunk.github.io/mkdocs-material/reference/
+1. Mejor soporte para encabezados de varios niveles
+1.  Amigable para exportar a pdf
+1.  Hay muchas cosas que puedes hacer con él, consulta: https://squidfunk.github.io/mkdocs-material/reference/ce/
 
 !!! note
-    比如这种花活。
+   Por ejemplo, este tipo de trabajo de lujo. 
 
-# 导出为 pdf
+# Exportar a pdf.
 
-使用 Material for MkDocs 主题配合 mkdocs-with-pdf 插件，我们可以将整个文档自动导出为 pdf 文件。mkdocs.yml 中已经包含了一个预设的 pdf 导出配置。关于如何配置 pdf 导出环境及如何使用，请参考https://pypi.org/project/mkdocs-with-pdf/
+Al utilizar el tema Material para MkDocs con el complemento mkdocs-with-pdf, podemos exportar automáticamente todo el documento como un archivo pdf. mkdocs.yml ya contiene una configuración de exportación de PDF preestablecida. Para obtener información sobre cómo configurar el entorno de exportación de PDF y cómo usarlo, consulte https://pypi.org/project/mkdocs-with-pdf/
 
 !!! info
-    注意，原生主题在将代码块导出为 pdf 时有一定问题，建议在导出 pdf 时使用 material 主题。
+    Tenga en cuenta que el tema nativo tiene algunos problemas al exportar bloques de código a PDF. Se recomienda utilizar el tema de material al exportar PDF.
