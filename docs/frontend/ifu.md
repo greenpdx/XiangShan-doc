@@ -1,64 +1,58 @@
-# 取指令单元（Instruction Fetch Unit）文档
+# Documentación de la unidad de obtención de instrucciones
 ![ifu](../figs/frontend/IFU.png)
 
-这一章描述香山处理器取指单元（IFU）的实现，取指单元流水线如上图所示。
+En este capítulo se describe la implementación de la unidad de búsqueda de instrucciones (IFU) del procesador Xiangshan. La secuencia de comandos de la unidad de búsqueda de instrucciones se muestra en la figura anterior.
 
-南湖架构的 IFU 采用了 4 级流水线的结构，相较于雁栖湖版本 IFU 的设计做了非常大的简化，这得益于采用分支预测 - 指令缓存解耦的取指令架构。
+La IFU de la arquitectura Nanhu adopta una estructura de canalización de 4 etapas, que es mucho más simple que el diseño de la IFU de la versión Yanqi Lake. Esto se debe al uso de una arquitectura de búsqueda de instrucciones desacoplada de caché de instrucciones y predicción de ramificaciones.
 
-一个取指令请求从 FTQ 发出之后在 IFU 中经历了下面几个阶段：
+Después de que se emite una solicitud de obtención de instrucciones desde el FTQ, pasa por las siguientes etapas en la IFU:
 
-- 从 FTQ 发送过来的取指令请求包含了一个 32 bytes 指令码 （称为一个指令块 ） 的起始地址和下一个跳转目标的地址，
-- 在 `IFU0` 阶段同时发送请求给 IFU 流水线和 ICache 模块。
-- `IF1` 阶段会做一些简单计算（例如这个指令块里每个 2 bytes， 即每一条可能的指令的 PC ）。
-- `IF2` 阶段等到指令缓存返回最多两个 cache line 的数据（因为可能存在这个 [指令块 跨行](#crossfetch) 的情况）之后，第一步先做指令切分，将在取指令地址之外的指令码抛弃得到有效范围的指令码。送入预译码器进行[预译码](#predecode)，同时将 16 bits 的压缩指令扩展为 32 bits 的指令。
-- `IF3` 阶段首先会将预译码结果送到 [分支预测检查器](#predchecker) 里，发现错误就会在下一拍刷新 IFU 流水线并把信息发送给 FTQ 刷新预测器并重新取指令。未发现错误的缓存在指令缓冲队列（IBuffer）里等待译码。
-- `IF3` 阶段还会根据地址翻译的结果向指令 MMIO 模块发起取指令请求，同时转变为 [MMIO 取指令模式](#mmiofetch)，指令一条一条顺序执行。
-- IFU 控制逻辑还需要 [处理半条 RVI 指令](#half) 的情况。
+- La solicitud de búsqueda de instrucciones enviada desde FTQ contiene un código de instrucción de 32 bytes (llamado bloque de instrucciones) y la dirección inicial y la dirección del próximo objetivo de salto.
+- Enviar solicitudes tanto al pipeline IFU como al módulo ICache en la etapa `IFU0`.
+- La etapa `IF1` realiza algunos cálculos simples (por ejemplo, cada 2 bytes en este bloque de instrucciones, es decir, el PC de cada instrucción posible).
+- En la etapa `IF2`, después de esperar a que el caché de instrucciones devuelva hasta dos líneas de caché de datos (porque puede haber una situación en la que el [bloque de instrucciones cruza líneas](#crossfetch)), el primer paso es dividir la instrucción y obtener la dirección de la instrucción. Los códigos de comando fuera del rango válido se descartan. El comando se envía al predecodificador para la predecodificación y el comando comprimido de 16 bits se expande a un comando de 32 bits.
+- La etapa `IF3` enviará primero el resultado de pre-descodificación al [verificador de predicción de ramificación](#predchecker). Si se encuentra un error, la secuencia de IFU se actualizará en el siguiente latido y la información se enviará al FTQ para actualizar el predictor y volver a recuperar la instrucción. Los buffers en los que no se han detectado errores esperan ser decodificados en la cola de buffer de instrucciones (IBuffer).
+- La etapa `IF3` también iniciará una solicitud de búsqueda de instrucciones al módulo MMIO de instrucciones en función del resultado de la traducción de direcciones y, al mismo tiempo, cambiará al [modo de búsqueda de instrucciones MMIO](#mmiofetch) y ejecutará las instrucciones una por una. secuencialmente.
+- La lógica de control IFU también necesita [manejar el caso de la mitad de una instrucción RVI](#half).
 
-<h2 id=predecode></h2>
-## 预译码 
+## Pre-descodificación
 
-预译码器将经过切分的 16 个 16 bits 指令码进行译码，得到部分指令信息（是否是跳转指令、跳转指令类型以及是否是压缩指令等），对于跳转指令还会计算它的目标地址。主要是为了给 [分支预测检查器](#predchecker) 提供指令信息和正确的目标地址以及及时更新预测器中的指令信息。
+El predecodificador decodifica los 16 códigos de instrucciones de 16 bits después de la segmentación para obtener información sobre la instrucción (si se trata de una instrucción de salto, tipo de instrucción de salto, si se trata de una instrucción comprimida, etc.). Para la instrucción de salto, también calcula Su dirección de destino. El objetivo principal es proporcionar información de instrucciones y la dirección de destino correcta al [verificador de predicción de ramas](#predchecker) y actualizar la información de instrucciones en el predictor de manera oportuna.
 
-另一方面，预译码器也会将压缩指令（如果这个指令块里有的话）扩展为 32 bits 的长指令以便于后续简化译码逻辑。
+Por otro lado, el predecodificador también expandirá las instrucciones comprimidas (si hay alguna en este bloque de instrucciones) en instrucciones de 32 bits de longitud para simplificar la lógica de decodificación posterior.
 
-<h2 id=predchecker></h2>
-##  分支预测检查 
+## Comprobación de predicción de rama
 
-分支预测检查器在拿到指令的预译码信息之后主要针对以下几个错误检查：
+Después de obtener la información de predecodificación de la instrucción, el verificador de predicción de bifurcación verifica principalmente los siguientes errores:
 
-- jump 指令预测不跳转的错误：针对 `jal` 和 `ret` 这两种种必定跳转的指令检查，如果这个块的 [有效指令范围](#validinstr) 内有这两种指令，且预测为不跳转，则视为预测错误。
-- 非跳转指令的预测错误：如果预测为跳转的指令不在有效指令范围内，或者在有效指令范围内但是不是一条跳转指令，则视为预测错误。
-- 目标地址错误：对于可以通过指令码知道目标地址的跳转指令（除了 `jalr` 之外的跳转指令），如果在有效指令范围内且预测跳转并且跳转目标地址和正确地址不匹配，则视为预测错误。
+- Error de predicción de instrucción de salto: verifique las dos instrucciones, jal y ret, que están destinadas a saltar. Si estas dos instrucciones están en el rango de instrucciones válidas de este bloque y la predicción es Si no salta, se considera un Error de predicción.
+- Predicción errónea de instrucciones que no son de salto: si la instrucción predicha como un salto no está en el rango de instrucciones válidas, o está en el rango de instrucciones válidas pero no es una instrucción de salto, se considera una predicción errónea.
+- Error de dirección de destino: para instrucciones de salto cuya dirección de destino se puede conocer a partir del código de instrucción (excepto las instrucciones de salto `jalr`), si está dentro del rango de instrucción válido y se predice el salto y la dirección de destino del salto no coincide con la dirección correcta, se considera un error de predicción.
 
-在发现错误后，分支预测检查器挑选出指令顺序最靠前的预测错误指令，把错误信息（错误指令在块里的位置、指令预译码信息、正确的目标地址）传递给 FTQ ，同时清空 IFU 流水线。IFU 等待 FTQ 重新发取指令请求。
+Después de descubrir un error, el verificador de predicción de bifurcaciones selecciona la instrucción de error predicha al principio de la secuencia de instrucciones, pasa la información de error (la ubicación de la instrucción de error en el bloque, la información de predecodificación de la instrucción y la dirección de destino correcta) a FTQ y despeja el oleoducto IFU. La IFU espera que el FTQ vuelva a enviar la solicitud de búsqueda de instrucciones.
 
-<h2 id=crossfetch></h2>
-##  跨行指令处理（Cross-line Fetch）
+## Búsqueda entre líneas
 
-由于我们的指令块包括了 32 bytes 的指令码，相当于半个 cache line（64 Bytes）的大小，如果这个块的起始地址在后半个 cache line 里，那么完全有可能发生块的范围跨过两个 cache line 的情况，因此在指令缓存支持一次取两个 cache line 以保证这种情况下的指令吞吐。具体做法是当 FTQ 发现块的起始地址在后半个 cache line 里，就发起对指令缓存两个相邻 cache line 的请求。
+Dado que nuestro bloque de instrucciones incluye 32 bytes de código de instrucción, lo que equivale al tamaño de la mitad de una línea de caché (64 bytes), si la dirección de inicio de este bloque está en la segunda mitad de la línea de caché, es totalmente posible que el El rango de bloques se cruzará. Por lo tanto, la caché de instrucciones admite la obtención de dos líneas de caché a la vez para garantizar el rendimiento de las instrucciones en este caso. El enfoque específico es que cuando FTQ descubre que la dirección inicial del bloque está en la segunda mitad de la línea de caché, inicia una solicitud para dos líneas de caché adyacentes del caché de instrucciones.
 
-<h2 id=validinstr></h2>
-##  有效指令范围 
+## Rango de comando válido
 
-一个取指令块的有效范围由 FTQ 给出的起始地址和跳转指令的 index（如果有跳转的话）共同确定，如果这个块没有跳转指令，则默认指令有效范围为起始地址开始的 256 bits。
+El rango efectivo de un bloque de instrucción de búsqueda está determinado por la dirección de inicio dada por FTQ y el índice de la instrucción de salto (si hay un salto). Si no hay instrucción de salto en este bloque, el rango efectivo de instrucción predeterminado es el de inicio. Dirección. 256 bits.
 
-有效指令范围可能被 IFU 的检查重新确定，主要包括：
+El alcance de las instrucciones válidas podrá ser determinado nuevamente por la inspección de la IFU, incluyendo principalmente:
 
-* 分支预测检查发现有未预测跳转的 `jal` 和 `ret` 指令时，需要重新将有效指令范围缩短到第一条这样的跳转指令；
-* 前一个块有半条 RVI 的情况，紧随其后的这个块的第一个 16 bits 不在有效指令范围内。
-* MMIO 请求的块的指令有效范围只有 32 bits
+* Cuando la verificación de predicción de rama encuentra instrucciones de salto `jal` y `ret` no previstas, es necesario acortar el rango de instrucciones válidas a la primera de dichas instrucciones de salto;
+* En el caso donde el bloque anterior tiene medio RVI, los primeros 16 bits del bloque siguiente no están dentro del rango de instrucciones válidas.
+* El rango efectivo de la instrucción de bloque de la solicitud MMIO es de solo 32 bits
 
-<h2 id=mmiofetch></h2>
-## MMIO 取指令 
+## Obtención de instrucción MMIO
 
-在 `IF3` 阶段，如果 ITLB 发现这个地址是 MMIO 空间的，IFU 就启动 MMIO 取指令模式，向指令 MMIO 模块发送请求，指令 MMIO 模块向 MMIO 总线发送 `Get` 请求 64 bits 的数据，等待总线返回后根据 IFU 的请求地址对数据进行裁剪，返回指令码。IFU 将指令码进行扩展之后发送给指令缓冲队列。同时，IFU 阻塞流水线，侦听 ROB 的 commit 信号，直到指令执行完后发送前端重定向取下一条指令。
+En la etapa `IF3`, si ITLB encuentra que la dirección está en el espacio MMIO, la IFU inicia el modo de búsqueda de instrucciones MMIO y envía una solicitud al módulo MMIO de instrucciones. El módulo MMIO de instrucciones envía una solicitud `Get` para 64 bits de datos al bus MMIO y espera a que el bus regrese. Luego, los datos se recortan según la dirección de solicitud de la IFU y se devuelve el código de instrucción. La IFU expande el código de instrucción y lo envía a la cola del búfer de instrucciones. Al mismo tiempo, la IFU bloquea la tubería y escucha la señal de confirmación del ROB hasta que se ejecuta la instrucción y envía una redirección del frontend para buscar la siguiente instrucción.
 
-MMIO 请求每次只取一条指令，因此在这种模式下处理器的指令执行速度会变得非常慢。
+Las solicitudes MMIO obtienen solo una instrucción a la vez, por lo que la velocidad de ejecución de instrucciones del procesador se vuelve muy lenta en este modo.
 
-<h2 id=half></h2>
-##  半条 RVI 指令的处理 
+## Procesamiento de la mitad de una instrucción RVI
 
-当一个指令块在 `IF3` 阶段发现它的最后 2 bytes 是一条 RVI 指令的前半部分时，我们把这条 RVI 指令算在这个块里，同时我们取两个 cache line 的机制保证后半部分是一定可以被取到的，因此我们只需要在发生这种情况的时候置一个标识位，当下一个块来的时候把第一个 2 bytes 排除在指令的有效范围之外即可。
+Cuando se encuentra un bloque de instrucciones en la etapa `IF3` cuyos últimos 2 bytes son la primera mitad de una instrucción RVI, contamos esta instrucción RVI en este bloque y utilizamos el mecanismo de tomar dos líneas de caché para asegurarnos de que la segunda la mitad es Definitivamente se puede recuperar, por lo que solo necesitamos establecer una bandera cuando esto sucede y excluir los primeros 2 bytes del rango válido de la instrucción cuando llega el siguiente bloque.
 
---8<-- "docs/frontend/abbreviations.md"
+--8<-- "docs/frontend/abreviaturas.md"
