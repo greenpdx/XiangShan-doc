@@ -1,45 +1,37 @@
-# Request Buffer 设计
+# Request Buffer Design
 
-为了避免多个并发请求同时在 Cache 中被处理时产生资源竞争和相互干扰，huancun 以 Set 为粒度对请求进行阻塞，
-相同优先级（共 A、B、C 三种优先级）且同一个 Set 的请求不能同时进入 MSHR。为了降低这种阻塞策略给 Cache 带来的性能损失，我们设计了 Request Buffer 来缓冲被阻塞的请求，从而能让后续不同 Set 的请求非阻塞的进入 MSHR。
+In order to avoid resource competition and mutual interference when multiple concurrent requests are processed in the Cache at the same time, huancun blocks requests with Set as the granularity.
+Requests with the same priority (three priorities, A, B, and C) and the same Set cannot enter the MSHR at the same time. In order to reduce the performance loss of the Cache caused by this blocking strategy, we designed the Request Buffer to buffer blocked requests, so that subsequent requests from different Sets can enter the MSHR without blocking.
 
-考虑到 CPU 中 Tilelink 总线请求数量 A>>B、A>>C 的特性，Requeset Buffer 只缓冲 A 通道的请求，这样可以在
-提升性能的同时降低硬件实现复杂度。
+Considering the characteristics of the number of Tilelink bus requests in the CPU, A>>B, A>>C, the Request Buffer only buffers requests from the A channel, which can
+improve performance while reducing the complexity of hardware implementation.
 
-Request Buffer 的设计类似于 CPU 中的保留站/发射队列，当新请求无法进入 MSHR 时便会尝试进入 Request Buffer，若 Buffer 中有空项则请求便会被分配到对应位置，同时记录下该请求在等待哪个 MSHR 释放（代码中的`wait_table`）。MSHR 释放时会广播其 MSHR id 到 Request Buffer 中，Buffer 中和该 MSHR 有依赖关系的项就可以被 "唤醒"。
+The design of the Request Buffer is similar to the reservation station/transmission queue in the CPU. When a new request cannot enter the MSHR, it will try to enter the Request Buffer. If there is an empty item in the Buffer, the request will be assigned to the corresponding position, and it will also record which MSHR the request is waiting for to be released (`wait_table` in the code). When MSHR is released, its MSHR id will be broadcasted to the Request Buffer, and the items in the Buffer that are dependent on the MSHR can be "woken up".
 
-当 Request Buffer 中存在多个相同 Set 的请求时，为了保证这些请求能以 FIFO 的顺序离开 Buffer，Buffer 内部
-还维护了一个**依赖矩阵** `buffer_dep_mask`，该矩阵记录着 Buffer 内部项之间的依赖关系，
-`buffer_dep_mask[i][j]` 为 1 表示位于 `i` 位置的请求和位于 `j` 位置的请求都是同一 Set 的，且位于 `i` 位置
-的请求比位于 `j` 位置的请求后到，因此当外部 MSHR 释放时请求 `j` 应当先离开 Buffer。
+When there are multiple requests of the same Set in the Request Buffer, in order to ensure that these requests can leave the Buffer in FIFO order, the Buffer also maintains a **dependency matrix** `buffer_dep_mask`, which records the dependencies between the items in the Buffer.
 
+`buffer_dep_mask[i][j]` is 1, which means that the request at position `i` and the request at position `j` are both from the same Set, and the request at position `i` arrives later than the request at position `j`, so when the external MSHR is released, request `j` should leave the Buffer first.
 
+# Refill Buffer Design <a name="refill_buffer"></a>
 
-# Refill Buffer 设计 <a name="refill_buffer"></a>
+In order to reduce the delay of Cache Miss, huancun uses Refill Buffer to buffer the data refilled from the lower cache or memory,
+so that the refilled data can be directly returned to the upper cache without writing to SRAM first.
 
-为了减少 Cache Miss的延迟，huancun 使用 Refill Buffer 来缓冲从下层 Cache 或 Memory 中 Refill 的数据，
-这样 Refill 的数据不需要先写入 SRAM 就可以直接返回给上层 Cache。
+# MSHR Alloc (MSHR allocation module) <a name="alloc"></a>
 
+According to the Tilelink manual specification, in order to avoid deadlock in the system, high-priority requests must be able to interrupt low-priority requests to execute first,
+therefore huancun designed N (N >= 1) abc MSHRs, 1 b MSHR, and 1 c MSHR.
 
+In the absence of Set conflict, all requests select an empty item in abc MSHR to enter;
+When a newly arrived high-priority request conflicts with an existing low-priority request in MSHR, the high-priority request will enter the dedicated MSHR.
+For example: if the b request conflicts with the a request Set in the abc MSHR, the new b request will be assigned to the b MSHR.
 
-# MSHR Alloc (MSHR分配模块) <a name="alloc"></a>
-
-根据 Tilelink 手册规范，为了避免系统中出现死锁，高优先级的请求要能够打断低优先级的请求先执行，
-因此 huancun 设计了 N 个(N >= 1)abc MSHR，1 个 b MSHR，1 个 c MSHR。
-
-在没有 Set 冲突的情况下，所有请求都在 abc MSHR 中挑选一个空项进入；
-当新到达的高优先级请求与 MSHR 中已有的低优先级请求发生冲突时，高优先级请求会进入专用 MSHR。
-例如：b 请求与 abc MSHR 中的 a 请求 Set 冲突，则新的 b 请求会被分配进 b MSHR，
-若 c 请求与 abc/b MSHR 中的 a/b 请求发生冲突，则新的 c 请求会被分配进 c MSHR。
-
-
+If the c request conflicts with the a/b request in the abc/b MSHR, the new c request will be assigned to the c MSHR.
 
 # ProbeHelper
 
-由于 huancun 采用了 inclusive-directory non-inclusive data 的设计，当 Client Directory 由于
-容量有限而无法存放新的 Cache block (e.g. blockA) 时，需要本级 Cache 向上级发送 Probe 请求，将上级的一个
-Cache Block (e.g. blockB) probe下来，再将新的 Cache Block(blockA) 对应状态存入 Client Directory中。
+Since huancun adopts the design of inclusive-directory non-inclusive data, when the Client Directory cannot store a new Cache block (e.g. blockA) due to limited capacity, the cache at this level needs to send a Probe request to the upper level, probe a Cache Block (e.g. blockB) of the upper level, and then store the corresponding state of the new Cache Block (blockA) in the Client Directory.
 
-为了简化单个 MSHR 的处理流程，我们设计了 ProbeHelper 来监听 Client Directory 的读取结果，如果发现
-了容量冲突，则由 ProbeHelper 生成一个伪造的 B 请求，将目标块从上层 Probe 下来。
-这样单个 MSHR 中便不需要考虑 Client Directoy 的容量冲突问题，简化了设计。
+In order to simplify the processing flow of a single MSHR, we designed ProbeHelper to monitor the reading results of the Client Directory. If a capacity conflict is found, ProbeHelper generates a fake B request to probe the target block from the upper level.
+
+In this way, there is no need to consider the capacity conflict of Client Directoy in a single MSHR, which simplifies the design.
