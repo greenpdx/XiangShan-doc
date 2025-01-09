@@ -1,55 +1,55 @@
-# 目录设计
+# Diseño de directorio
 
-本章将介绍 huancun 中目录的设计。本章中所指的“目录”是广义的，包含元数据和 Tag。
+Este capítulo presentará el diseño del directorio en huancun. El “catálogo” al que se hace referencia en este capítulo es amplio e incluye metadatos y etiquetas.
 
-huancun 是基于目录结构的 Non-inclusive Cache，在设计过程中受到了 NCID[^ncid] 的启发。多级 Cache 之间，数据是 Non-inclusive 的，而目录则是 Inclusive 的。在结构组织上，huancun 将上层数据的目录与本地数据的目录分开存储，两者结构类似。目录使用 SRAM 搭建，以 Set 为索引，每一个 Set 中有 Way 路数据。
-
-
-
-本地数据目录中每一项保存了如下的信息：
-
-* state：保存该数据块的权限（Tip/Trunk/Branch/Invalid 中的一种）
-* dirty：指示该数据块是否脏的
-* clientStates：保存了该数据块在上层的权限情况（仅在该块非 Invalid 下有意义）
-* prefetch：指示该数据块是否是被预取的
+huancun es un caché no inclusivo basado en una estructura de directorio, y su diseño se inspiró en NCID[^ncid]. Entre los cachés multinivel, los datos no son inclusivos, mientras que los directorios sí lo son. En términos de organización estructural, huancun almacena los directorios de datos de nivel superior y datos locales por separado, y las estructuras de ambos son similares. El directorio se construye utilizando SRAM, con Set como índice, y cada Set contiene datos Way.
 
 
 
-上层数据目录中每一项保存了如下的信息：
+Cada elemento del directorio de datos local almacena la siguiente información:
 
-* state：保存该上层数据块的权限
-* alias：保存该上层数据块的虚地址末位（即 alias bit，详见[Cache 别名问题](./cache_alias.md)）
-
-
-
-## 目录读取
-
-当 MSHR Alloc 模块将一个请求分配进入 MSHR 时，它也会同时向目录发起读请求。并行读取上层与本地的元数据与 Tag，根据 Tag 比对判断是否命中，依命中情况将相应路的元数据传递到对应的 MSHR 中。
-
-目录命中时，传递的路即为命中的路；目录未命中时，传递的路是根据替换算法得到的路。替换算法可灵活配置，南湖版本本地数据目录使用 PLRU 替换算法，上层数据目录使用随机替换算法。
+* estado: el permiso para guardar el bloque de datos (uno de los siguientes: Punta/Tronco/Rama/Inválido)
+* sucio: indica si el bloque de datos está sucio
+* clientStates: Guarda los permisos del bloque de datos en la capa superior (solo tiene sentido cuando el bloque no es inválido)
+* prefetch: indica si el bloque de datos está precargado
 
 
 
-## 目录写入
+Cada elemento del directorio de datos superior almacena la siguiente información:
 
-当 MHSR 事务处理接近尾声时，通常会需要写目录以更新状态、Tag 等信息。目录有 4 个写请求端口，分别接收本地元数据、上层元数据、本地 Tag 和上层 Tag 的写入。写请求的优先级高于读请求。
-
-连接关系上，所有 MSHR 的上述 4 种写请求分开仲裁到目录中。其中，仲裁优先级关系被精心设计以避免发生请求嵌套错误或者死锁。
-
-
-
-## 常见问题与设计考量
-
-#### 目录中已经有了上层元数据，为什么本地元数据中还会存 clientStates？
-
-* 当一个请求，比如 Acquire BLOCK_A，在本地目录中 Miss 时，目录会根据替换算法选择一路的信息传递到 MSHR，此时这一路可能并不是无效的，而是有一个数据块 BLOCK_B。为了完成此 Acquire 请求，我们需要知道 BLOCK_B 在上层的状态信息。为了避免二次读目录，我们会在本地元数据中额外存一份 clientStates。
+* estado: el permiso para guardar el bloque de datos superior
+* alias: guarda el último bit de la dirección virtual del bloque de datos de la capa superior (es decir, el bit de alias, consulte [Problema de alias de caché](./cache_alias.md) para obtener más detalles)
 
 
 
-#### 目录是否会出现读写竞争冒险？
+## Lectura de directorio
 
-* 我们的 MSHR 是按照 Set 阻塞的，且仅当 MSHR 释放后才会让新请求进入并读取目录，因此不会出现读写竞争冒险。
+Cuando el módulo Alloc de MSHR asigna una solicitud al MSHR, también inicia simultáneamente una solicitud de lectura al directorio. Lea la capa superior y los metadatos y etiquetas locales en paralelo, determine si hay un resultado según la comparación de etiquetas y pase los metadatos de la ruta correspondiente al MSHR correspondiente según la situación del resultado.
+
+Cuando el directorio impacta, la ruta pasada es la ruta impactada; cuando el directorio no impacta, la ruta pasada es la ruta obtenida según el algoritmo de reemplazo. El algoritmo de reemplazo se puede configurar de forma flexible. El directorio de datos local de la versión Nanhu utiliza el algoritmo de reemplazo PLRU y el directorio de datos de nivel superior utiliza el algoritmo de reemplazo aleatorio.
 
 
 
-[^ncid]: Zhao, Li, et al. "NCID: a non-inclusive cache, inclusive directory architecture for flexible and efficient cache hierarchies." *Proceedings of the 7th ACM international conference on Computing frontiers*. 2010.
+## Escritura en directorio
+
+Cuando la transacción MHSR está llegando a su fin, generalmente es necesario escribir el directorio para actualizar el estado, las etiquetas y otra información. El directorio tiene 4 puertos de solicitud de escritura, que reciben la escritura de metadatos locales, metadatos de nivel superior, etiquetas locales y etiquetas de nivel superior respectivamente. Las solicitudes de escritura tienen mayor prioridad que las solicitudes de lectura.
+
+En términos de relación de conexión, los 4 tipos de solicitudes de escritura anteriores de todos los MSHR se arbitran por separado en el directorio. La relación de prioridad de arbitraje está cuidadosamente diseñada para evitar errores de anidación de solicitudes o bloqueos.
+
+
+
+## Problemas comunes y consideraciones de diseño
+
+#### Ya hay metadatos de nivel superior en el directorio, ¿por qué clientStates todavía se almacena en los metadatos locales?
+
+* Cuando una solicitud, como Adquirir BLOCK_A, falla en el directorio local, el directorio seleccionará una ruta de información para pasar a MSHR según el algoritmo de reemplazo. En este momento, es posible que esta ruta no sea inválida, pero tiene un bloque de datos BLOQUE_B. Para completar esta solicitud de adquisición, necesitamos conocer la información de estado de BLOCK_B en la capa superior. Para evitar leer el directorio dos veces, almacenamos una copia adicional de clientStates en los metadatos locales.
+
+
+
+#### ¿Existe riesgo de contención de lectura y escritura en el directorio?
+
+* Nuestro MSHR está bloqueado según Set, y se permite que nuevas solicitudes ingresen y lean el directorio solo después de que se libera MSHR, por lo que no hay riesgo de contención de lectura y escritura.
+
+
+
+[^ncid]: Zhao, Li, et al. "NCID: una caché no inclusiva, una arquitectura de directorio inclusiva para jerarquías de caché flexibles y eficientes". *Actas de la 7.ª conferencia internacional de la ACM sobre fronteras informáticas*. 2010.
