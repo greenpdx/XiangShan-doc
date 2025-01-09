@@ -1,108 +1,107 @@
-# 乱序访存机制
+# Mecanismo de acceso a memoria fuera de orden
 
-这一章介绍香山处理器中实现乱序访存的关键机制.
+Este capítulo presenta el mecanismo clave para implementar el acceso a la memoria fuera de orden en el procesador Xiangshan.
 
-## Load Hit
+## Cargar golpe
 
-在一条 load 指令命中时, 这条 load 指令从保留站中发出后会经历 3 个 stage:
+Cuando llega una instrucción de carga, esta pasará por 3 etapas después de ser emitida desde la estación de reserva:
 
-* Stage 0: 计算地址, 读 TLB, 读 dcache tag
-* Stage 1: 读 dcache data
-* Stage 2: 获得读结果，选择并写回
+* Etapa 0: Calcular dirección, leer TLB, leer etiqueta dcache
+* Etapa 1: Leer datos de dcache
+* Etapa 2: Obtener los resultados de la lectura, seleccionarlos y volver a escribirlos
 
-在 stage 2 之后, 还会有一个额外的 stage 处理 stage 2 来不及完成的状态的更新. 关于各个阶段执行操作的细节, 参见 [load 流水线](./fu/load_pipeline.md) 的详细介绍.
+Después de la etapa 2, hay una etapa adicional que maneja las actualizaciones de estado que la etapa 2 no tuvo tiempo de completar. Para obtener detalles sobre las operaciones realizadas por cada etapa, consulte la [canalización de carga](./fu/load_pipeline.md) detalles.
 
-## Sta and Std
+## Sta y Std
 
-store 指令的 address 计算部分在从保留站中发出后会经历 4 个 stage, 详细参见 [sta 流水线](./fu/store_pipeline.md#Sta-Pipeline):
+La parte de cálculo de dirección de la instrucción de almacenamiento pasará por 4 etapas después de que se emita desde la estación de reserva. Consulte [sta pipeline](./fu/store_pipeline.md#Sta-Pipeline) para obtener más detalles:
 
-* Stage 0: 计算地址, 读 TLB
-* Stage 1: addr 和其他控制信息写入 store queue, 开始违例检查
-* Stage 2: 违例检查
-* Stage 3: 违例检查, 允许 store 指令提交
+* Etapa 0: Calcular dirección, leer TLB
+* Etapa 1: la dirección y otra información de control se escriben en la cola de almacenamiento y comienza la verificación de violaciones.
+* Etapa 2: Comprobación de infracciones
+* Etapa 3: Comprobación de infracciones, que permite enviar la instrucción de la tienda.
 
-store 指令的 data 计算部分在从保留站中发射后, 会直接从保留站中将数据搬运到 store queue, 参见 [std 流水线](./fu/store_pipeline.md#Std-Pipeline).
+La parte de cálculo de datos de la instrucción de almacenamiento moverá directamente los datos desde la estación de reserva a la cola de almacenamiento después de que se emitan desde la estación de reserva, consulte [std pipeline](./fu/store_pipeline.md#Std-Pipeline).
 
-各个阶段执行操作的细节, 参见 [load 流水线](./fu/load_pipeline.md) 的详细介绍.
+Para obtener detalles sobre las operaciones realizadas en cada etapa, consulte la introducción detallada de [canalización de carga](./fu/load_pipeline.md).
 
-## Load Miss 的处理
+## Manejo de errores de carga
 
-参见 [Load Miss](./fu/load_pipeline.md#Load-Miss).
+Consulte [Error de carga](./fu/load_pipeline.md#Load-Miss).
 
-## Replay From RS
+## Repetición desde RS
 
-这一节介绍 load 指令和 sta 操作从保留站重发(replay)的机制.
+Esta sección describe el mecanismo mediante el cual las instrucciones de carga y las operaciones del personal se reproducen desde las estaciones de reserva.
 
-以 load 指令为例. 在一些事件发生时, 我们将从保留站中重发这些 load 指令:
+Tomemos como ejemplo las instrucciones de carga. Cuando se produzcan determinados eventos, volveremos a emitir estas instrucciones de carga desde la estación de reserva:
 
-* TLB miss
-* L1 DCache MSHR full
-* DCache bank conflict
-* 前递时发现地址匹配但数据未就绪 (Data invalid)
+*TLB señorita
+* L1 DCache MSHR completo
+* Conflicto bancario DCache
+* Al reenviar la dirección coincide pero los datos no están listos (Datos no válidos)
 
-这些事件的共同特点是:
+Las características comunes de estos eventos son:
 
-* 发生频率不高(相比于正常的访存指令)
-* 这些事件发生时访存指令无法正常执行 
-* 在一段时间后再执行相同的访存指令, 这些事件不会发生
-    * 例如, TLB miss 事件会在 PTW 完成 TLB 重填之后消失
+* Ocurre con poca frecuencia (en comparación con las instrucciones de acceso a la memoria normales)
+* Cuando ocurren estos eventos, las instrucciones de acceso a la memoria no se pueden ejecutar normalmente.
+* Si la misma instrucción de acceso a la memoria se ejecuta nuevamente después de un período de tiempo, estos eventos no ocurrirán.
+ * Por ejemplo, el evento de pérdida de TLB desaparecerá después de que PTW complete la recarga de TLB.
 
-从保留站重发机制的作用是让这些指令在保留栈中稍作等待, 在一定的周期之后重新执行. 这一机制的实现如下: 一条指令从访存 RS 中发射之后仍然需要保留在 RS 中, 访存指令在离开流水线时向 RS 反馈是否需要从保留站重发. 需要从保留站重发的指令会在 RS 中继续等待在一定时间间隔之后重新发射.
+El objetivo del mecanismo de reemisión desde la estación de reserva es dejar que estas instrucciones esperen un tiempo en la pila de reserva y volver a ejecutarlas después de un cierto período de tiempo. La implementación de este mecanismo es la siguiente: después de que se emite una instrucción desde la estación de reserva, El acceso a la memoria RS, aún debe conservarse en el RS, cuando la instrucción de acceso a la memoria sale de la tubería, le informará al RS si es necesario volver a emitirla desde la estación de reserva. La instrucción que debe volver a emitirse desde la estación de reserva La estación de reserva continuará esperando en el RS para ser reemitida después de un cierto intervalo de tiempo.
 
-目前, load 流水线中有两个向保留站反馈是否需要重发指令的端口. 这两个端口分别位于 load stage 1 (`feedbackFast`) 和 load stage 3 (`feedbackSlow`) . 在 load stage 0 和 load stage 1 可以被检查出的需要重发的指令会通过 load stage 1 的 `feedbackFast` 端口将重发请求反馈到保留站. 在 load stage 2 才能被检查出的重发请求将在 load stage 3 的 `feedbackSlow` 端口反馈到保留站. 两个端口的设计是为了让保留站能更早地重发一些需要重发的指令.
-    
-在 `feedbackFast` 端口产生重发请求后, 对应的指令不会在流水线里继续流动. 亦即, `feedbackSlow` 端口不会产生这条指令的反馈.
+Actualmente, hay dos puertos en la tubería de carga que proporcionan retroalimentación a la estación de reserva sobre si es necesario volver a emitir instrucciones. Estos puertos se encuentran en la etapa de carga 1 (`feedbackFast`) y la etapa de carga 3 (`feedbackSlow`). Las instrucciones que Las solicitudes de reenvío que se puedan detectar en la etapa 1 y que deban reenviarse se enviarán de vuelta a la estación de reserva a través del puerto `feedbackFast` de la etapa de carga 1. Las solicitudes de reenvío que solo se puedan detectar en la etapa de carga 2 se enviarán de vuelta a la estación de reserva a través de El puerto `feedbackFast` de la etapa de carga 3. El puerto feedbackSlow se utiliza para enviar información a la estación de reserva. Los dos puertos están diseñados para permitir que la estación de reserva vuelva a enviar algunas instrucciones que deben enviarse antes.
 
-store addr (sta) 流水线只设置了一个反馈端口. 在 store stage 1, store 流水线就会向保留站报告是否需要重发这条指令.
+Después de que el puerto `feedbackFast` genere una solicitud de reenvío, la instrucción correspondiente no seguirá fluyendo en la secuencia. En otras palabras, el puerto `feedbackSlow` no generará retroalimentación para esta instrucción.
 
-除了是否要进行指令重发的信息, 重发反馈端口还包括以下信息：
+La canalización de la dirección de almacenamiento (sta) tiene solo un puerto de retroalimentación. En la etapa de almacenamiento 1, la canalización de almacenamiento informa a la estación de reserva si es necesario volver a emitir la instrucción.
 
-* 使用保留站 index（rsIdx）索引要重发的指令在保留站中的位置
-* 使用 sourceType 域区分不同的重发原因
-* 为 load 发现之前的 store 地址就绪但数据未就绪的情况, 提供了反馈这条 store sqIdx 的接口
+Además de la información sobre si se debe reenviar el comando, el puerto de comentarios de reenvío también incluye la siguiente información:
 
-!!! note
-    这一机制可能在下一版设计中发生变动.
+* Utilice el índice de la estación de reserva (rsIdx) para indexar la ubicación de la instrucción que se volverá a emitir en la estación de reserva.
+* Utilice el campo sourceType para distinguir diferentes motivos de reenvío
+* Proporciona una interfaz para la retroalimentación de este sqIdx de la tienda cuando la carga encuentra que la dirección de la tienda anterior está lista pero los datos no están listos
 
-## Store To Load Forward
+!!! nota
+ Este mecanismo puede cambiar en la próxima versión del diseño.
 
-Store 到 Load 的前递 (Store To Load Forward, STLF) 是指在 store 指令的数据被写入到数据缓存之前, 后续访问相同地址 load 指令从核内的访存队列和缓冲区获得这条 store 指令数据的操作.
+## Almacenar para cargar hacia adelante
 
-store 到 load 的前递操作被分配到三级流水执行. 在前递操作期间前递逻辑会并行检查 committed store buffer 和 store queue 中是否存在当前 load 需要的数据. 如果存在，则将这些数据合并到这一次 load 的结果中. 
+Store To Load Forward (STLF) significa que antes de que los datos de una instrucción de almacenamiento se escriban en la caché de datos, las instrucciones de carga posteriores que acceden a la misma dirección obtienen esta instrucción de almacenamiento de la cola de acceso a la memoria y del búfer en el núcleo. Operaciones sobre datos.
 
-### 虚地址前递
+La operación de avance desde el almacenamiento hasta la carga se asigna a la secuencia de tres etapas. Durante la operación de avance, la lógica de avance verifica en paralelo si los datos requeridos por la carga actual existen en el búfer de almacenamiento y la cola de almacenamiento comprometidos. Si es así, los datos se fusiona en En el resultado de esta carga.
 
-为了时序考虑，南湖架构使用虚地址前递，实地址检查的机制. 这个机制通过将 TLB 查询从数据前递的数据通路上移除出去(但在控制通路上仍保留)的方式, 优化 store to load forward 的时序表现.
+### Reenvío de dirección virtual
+
+Por cuestiones de tiempo, la arquitectura de Southlake utiliza un mecanismo de verificación de dirección real y un pase de reenvío de dirección virtual. Este mecanismo optimiza el rendimiento de tiempo de reenvío de la tienda a la carga.
 
 <!-- !!! todo -->
-<!-- 基本思路, 图 -->
+<!-- Idea básica, diagrama -->
 
-**虚地址前递的数据通路:** [load 流水线](../memory/fu/load_pipeline.md)的 stage 0 会根据指令的 sqIdx，生成数据前递所使用的 mask. 在 load 流水线的 stage 1，虚拟地址和 mask 被发送到 [store queue](../memory/lsq/store_queue.md#store-to-load-forward-query) 和 [committed store buffer](../memory/lsq/committed_store_buffer.md#store-to-load-forward-query) 进行前递查询. 在 load 流水线的 stage 2，store queue 和 committed store buffer 产生前递查询结果，这些结果会和 dcache 读出的结果合并. 
+**Ruta de datos para el reenvío de direcciones virtuales:** La etapa 0 de la [canalización de carga](../memory/fu/load_pipeline.md) genera una máscara para el reenvío de datos en función del sqIdx de la instrucción. En la etapa 1, la dirección virtual y la máscara se envían a la [cola de almacenamiento](../memory/lsq/store_queue.md#store-to-load-forward-query) y al [búfer de almacenamiento confirmado](../memory/lsq/ En la etapa 2 del pipeline de carga, la cola de almacenamiento y el buffer de almacenamiento confirmado generan resultados de consultas de reenvío, que se fusionan con los resultados leídos desde dcache.
 
-**虚地址前递的控制通路:** 在 load 流水线的 stage 0, 指令的虚拟地址被送入 TLB 开始进行虚实地址转换. 在 load 流水线的 stage 1, TLB 反馈回指令的物理地址. 物理地址和 mask 被发送到 [store queue](../memory/lsq/store_queue.md#store-to-load-forward-query) 和 [committed store buffer](../memory/lsq/committed_store_buffer.md#store-to-load-forward-query) 进行前递查询(只做地址匹配). 在 load stage 2, 虚地址的匹配结果和实地址的匹配结果将被比较, 一旦两者不同, 则说明虚地址前递发生了错误. [检查发现错误后，触发回滚并刷新 committed store buffer](../fu/load_pipeline.md#forward-failure). 这样的操作会将引发错误的虚地址从 store queue 和 committed store buffer 中排除出去.
+**Ruta de control para reenviar direcciones virtuales:** En la etapa 0 de la secuencia de carga, la dirección virtual de la instrucción se envía a la TLB para iniciar la conversión de dirección virtual a real. En la etapa 1 de la secuencia de carga, la TLB devuelve la dirección física de la instrucción. La dirección física y la máscara se envían a la [cola de almacenamiento](../memory/lsq/store_queue.md#store-to-load-forward-query) y al [búfer de almacenamiento confirmado] ](../memory/lsq/committed_store_buffer.md#store -to-load-forward-query) realiza una consulta de reenvío (solo coincidencia de direcciones). En la etapa de carga 2, el resultado de la coincidencia de la dirección virtual y el resultado de la coincidencia de Se comparará la dirección real. Si las dos son diferentes, significa que se reenvía la dirección virtual. Se produjo un error durante el reenvío. [Después de verificar si hay un error, active una reversión y actualice el búfer de almacenamiento confirmado](../fu /load_pipeline.md#forward-failure). Esta operación elimina la dirección virtual que causó el error de la cola de almacenamiento y del búfer de almacenamiento confirmado. búfer de almacenamiento Excluido de.
 
-!!! info
-    作为对比，雁栖湖架构实地址前递的流程如下： load 流水线的 stage 0 会根据指令的 sqIdx，生成数据前递所使用的 mask. 在 load 流水线的 stage 1，TLB 反馈回物理地址，此物理地址和 mask 被发送到 store queue 和 committed store buffer 进行前递查询. 在 load 流水线的 stage 2，store queue 和 committed store buffer 产生前递查询结果，这些结果会和 dcache 读出的结果合并. 控制和数据通路均遵循这一流程. 
+!!! información
+ En cambio, el proceso de reenvío de direcciones reales en la arquitectura de Yanqi Lake es el siguiente: la etapa 0 de la canalización de carga genera una máscara para el reenvío de datos en función del sqIdx de la instrucción. En la etapa 1 de la canalización de carga, la TLB retroalimenta La dirección física. Esta máscara de dirección física se envía a la cola de almacenamiento y al búfer de almacenamiento comprometido para la consulta de reenvío. En la etapa 2 de la canalización de carga, la cola de almacenamiento y el búfer de almacenamiento comprometido generan resultados de consulta de reenvío, que se fusionan con los resultados leídos. Desde el dcache. Ruta de control y datos. Todos siguen este proceso.
 
-### 前递结果的保存
+### Guardando los resultados del avance
 
-如果 DCache miss, 保留 forward 结果.  Forward 的结果（mask 和 data）会被写入到 load queue 中. 后续 dcache refill 结果时，load queue 会负责合并 refill 上来的数据和 forward 的结果，最终生成完整的 load 结果. 
+Si DCache falla, se conserva el resultado de reenvío. El resultado de reenvío (máscara y datos) se escribirá en la cola de carga. Cuando DCache rellene el resultado más tarde, la cola de carga será responsable de fusionar los datos rellenados con el resultado de reenvío para Finalmente generar una cola de carga completa. resultado.
 
-### 前递相关的性能优化
+### Optimización del rendimiento relacionado con el avance
 
-dcache miss 但前递完全命中时, 可以不等待 dcache 返回数据, 直接写回这条指令的结果. 但是, 出于时序考虑(来不及将这种指令标成命中状态). 南湖架构将这种情况交给 load queue 处理. 这样的指令在更新 load queue 时会直接设置 `datavalid` flag (表明 load 数据有效). 由此, load queue 会立刻发现这样的指令不需要等待 dcache refill 的结果. 这样的指令可以被直接选取并写回.
+Cuando el dcache falla pero el pase hacia adelante se ejecuta por completo, el resultado de esta instrucción se puede volver a escribir directamente sin esperar a que el dcache devuelva los datos. Sin embargo, debido a consideraciones de tiempo (no hay tiempo para marcar esta instrucción como un éxito) estado), la arquitectura Nanhu entregará esta situación a la cola de carga. Dichas instrucciones establecerán directamente el indicador `datavalid` (que indica que los datos de carga son válidos) al actualizar la cola de carga. Como resultado, la cola de carga se actualizará inmediatamente. Tenga en cuenta que estas instrucciones no necesitan esperar el resultado de la recarga de dcache. Estas instrucciones se pueden seleccionar y volver a escribir directamente.
 
-## Store Load Violation 
+## Violación de carga de la tienda
 
-这一小节介绍 store-load 违例的检查和恢复. 在 store 指令到达 stage 1 时开始进行 load 违例检查. 如果在检查过程中发现了 load 违例, 则触发 load 违例的 store 不会在 ROB 中被标记为*可以提交*的状态. 同时, 回滚操作会立刻被触发, 无需等待触发 load 违例的 store 指令提交. load queue 一节介绍了 [检查和重定向的详细流程](../memory/lsq/load_queue.md#store---load-%E8%BF%9D%E4%BE%8B%E6%A3%80%E6%9F%A5%E7%9B%B8%E5%85%B3%E6%9C%BA%E5%88%B6).
+Esta sección describe la detección y recuperación de violaciones de carga de almacenamiento. La verificación de violación de carga comienza cuando una instrucción de almacenamiento llega a la etapa 1. Si se encuentra una violación de carga durante la verificación, el almacenamiento que activó la violación de carga no se marca como violación de carga en El ROB. Estado *Comprometerse*. Al mismo tiempo, la operación de reversión se activará inmediatamente, sin esperar a que se confirme la instrucción de almacenamiento que activó la violación de carga. La sección de cola de carga describe el proceso detallado de [verificación y redirección] (../memoria/lsq/ carga_cola.md#almacenar---cargar-%E8%BF%9D%E4%BE%8B%E6%A3%80%E6%9F%A5%E7%9B%B8%E5 %85%B3%E6%9C %BA%E5%88%B6).
 
-## Load Load Violation
+## Violación de carga de carga
 
-参见 [load-load 违例检查和恢复](../memory/lsq/load_queue.md#load---load-%E8%BF%9D%E4%BE%8B%E6%A3%80%E6%9F%A5%E7%9B%B8%E5%85%B3%E6%9C%BA%E5%88%B6)
+Consulte [detección y recuperación de violaciones de carga de carga](../memory/lsq/load_queue.md#load---load-%E8%BF%9D%E4%BE%8B%E6%A3%80%E6%9F %E5%85%B3%E6%9C%BA%E5%88%B6)
 
-## load 写回端口的争用
+## La carga vuelve a escribir en la contención del puerto
 
-南湖架构提供了两个 load 写回端口. 这个端口负责将 load 的结果写回到保留站，寄存器堆，并通知 ROB 指令已经完成执行. load 流水线的 stage 2 和 load queue 都可以使用这个端口写回结果. 两者会争抢这一端口的使用权. 
+La arquitectura de Southlake proporciona dos puertos de escritura diferida de carga. Este puerto es responsable de escribir el resultado de la carga en la estación de reserva, la pila de registros y notificar al ROB que la instrucción ha completado su ejecución. Tanto la etapa 2 de la canalización de carga como La cola de carga puede usar este puerto para volver a escribir. Como resultado, ambos competirán por el derecho a usar este puerto.
 
-正常情况下，流水线中的 load 指令拥有更高的优先级. 
-
+Normalmente, las instrucciones de carga en la tubería tienen mayor prioridad.
