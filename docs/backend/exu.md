@@ -1,3 +1,3 @@
-# 功能单元 EXU
+# Unidad funcional EXU
 
-香山为功能单元提供了 Exu 抽象，目前大多数功能单元都继承自 Exu。
+Xiangshan proporciona abstracción Exu para unidades funcionales, y actualmente la mayoría de las unidades funcionales heredan de Exu.
