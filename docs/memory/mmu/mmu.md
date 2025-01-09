@@ -1,44 +1,44 @@
 # MMU
 
-这一节介绍香山的 MMU（Memory Management Unit），包含 TLB， L2TLB，Repeater，PMP 和 PMA 等。
+This section introduces Xiangshan's MMU (Memory Management Unit), including TLB, L2TLB, Repeater, PMP and PMA.
 
-为了实现进程隔离，每个进程都会有自己的地址空间，使用的地址都是虚拟地址。MMU 也就是 Memory Management Unit，在处理器中主要负责将虚拟地址翻译成物理地址，然后用这个物理地址去访存。同时也会进行权限检查，比如是否可写，可执行。
+In order to achieve process isolation, each process will have its own address space, and the addresses used are all virtual addresses. MMU, or Memory Management Unit, is mainly responsible for translating virtual addresses into physical addresses in the processor, and then using this physical address to access memory. At the same time, permission checks are also performed, such as whether it is writable or executable.
 
-香山处理器支持 Sv39 分页机制，主要特点是虚拟地址长度为 39 位，低 12 比特是页内偏移，中间的 27 比特分为三段，也就是三层页表，这意味着遍历页表三次内存访问，因此需要对页表做缓存。
+Xiangshan processor supports Sv39 paging mechanism, the main feature of which is that the virtual address length is 39 bits, the lower 12 bits are the page offset, and the middle 27 bits are divided into three segments, that is, three-level page tables, which means that the page table is traversed three times for memory access, so the page table needs to be cached.
 
-香山的 MMU 中，和流水线紧耦合的分别位于前端和后端的 ITLB 和 DTLB，需要考虑流水线的需求，考虑时序问题，比如拆成两拍等操作。当 ITLB 和 DTLB 如果 miss，会发送请求 L2 TLB，当 L2 TLB 也 miss，就会使用 Hardware Page Table Walker 去访问内存中的页表内容。L2 TLB 主要考虑是如何提高并行度和过滤重复的请求。Repeater 是一级 TLB 到 L2 TLB 的请求缓冲。PMP 和 PMA 需要对所有的物理地址访问进行权限检查。
+In Xiangshan's MMU, the ITLB and DTLB, which are located at the front and back ends respectively and are tightly coupled with the pipeline, need to consider the needs of the pipeline and timing issues, such as splitting into two beats. If ITLB and DTLB miss, they will send a request to L2 TLB. If L2 TLB also misses, Hardware Page Table Walker will be used to access the page table content in memory. L2 TLB mainly considers how to improve parallelism and filter repeated requests. Repeater is the request buffer from the first level TLB to L2 TLB. PMP and PMA need to perform permission checks on all physical address accesses.
 
 ![mmu-overall](../../figs/memblock/mmu-overall.png)
 
 ## TLB
 
-香山的 TLB 可以对组织结构进行配置，包括相联模式、项数及替换策略等。默认配置为 ITLB 32 项普通页和 4 项大页（SuperPage），全相联，伪 LRU 替换；DTLB 为 64 项普通页直接相连，16 项全相联负责所有大小的页，伪 LRU 替换策略。DTLB 的直接相联项是全相联项的 victim cache。
+Xiangshan's TLB can configure the organizational structure, including associative mode, number of items, and replacement strategy. The default configuration is ITLB 32 items of normal pages and 4 items of large pages (SuperPage), fully associative, pseudo LRU replacement; DTLB is 64 items of normal pages directly connected, 16 items of fully associative responsible for pages of all sizes, pseudo LRU replacement strategy. The directly associated items of DTLB are victim caches of fully associated items.
 
-DTLB 为非阻塞式设计，如果 miss，需要由外部（Load/Store Unit）重发请求。ITLB 在 TLB 的基础上包了一层，实现了简单的阻塞式设计。
-每一条访存流水线都拥有独立的 DTLB，但 Load TLB 和 Store TLB 的内容分别是相同的。通过统一“替换算法”和回填信息维持多个 TLB 保持相同的内容：
+DTLB is a non-blocking design. If it misses, the request needs to be resent by the outside (Load/Store Unit). ITLB is a layer wrapped on the basis of TLB, realizing a simple blocking design.
+Each memory access pipeline has an independent DTLB, but the contents of Load TLB and Store TLB are the same. Multiple TLBs are maintained to keep the same content through a unified "replacement algorithm" and backfill information:
 
 ## L2TLB
 
-L2 TLB 是更大的页表缓存，由 ITLB 和 DTLB 共享，分为 Page Cache，Pake Walker，Last Level Page Walker，Miss Queue 和 Prefetcher 五部分。
+L2 TLB is a larger page table cache shared by ITLB and DTLB, divided into five parts: Page Cache, Pake Walker, Last Level Page Walker, Miss Queue and Prefetcher.
 
-一级 TLB 的请求会首先发送给 Page Cache，如果 hit，则会返回给一级 TLB。如果 miss，则根据 Page Cache 的查询情况分别进入 Page Walker 或 Last Level Page Walker 进行查询。如果 Page Walker 或 Last Level Page Walker 已被占用，则进入 Miss Queue 等待资源。
-同时为了加快页表访问，Page Cache 将三级页表都做了缓存。Page Cache 支持 ecc 校验，如果 ecc 校验出错，则刷新此项，并重新进行 Page Walk。
+The request of the first level TLB will first be sent to the Page Cache. If it hits, it will be returned to the first level TLB. If it misses, it will enter the Page Walker or Last Level Page Walker for query according to the query situation of the Page Cache. If the Page Walker or Last Level Page Walker is already occupied, it enters the Miss Queue to wait for resources.
+At the same time, in order to speed up page table access, Page Cache caches all three levels of page tables. Page Cache supports ecc verification. If the ecc verification fails, it refreshes this item and re-performs Page Walk.
 
-Page Walker 接收 Page Cache 的请求，进行 Hardware Page Table Walk。Page Walker 只访问前两级页表，即 1GB 和 2MB，不访问 4KB 页表。对 4KB 页表的访问由 Last Level Page Walker 承担。Page Walker 如果访问到叶子节点，即大页或空页，则返回给一级 TLB，否则送往 Last Level Page Walker。Page Walker 同时只能处理一个请求。
+Page Walker receives requests from Page Cache and performs Hardware Page Table Walk. Page Walker only accesses the first two levels of page tables, i.e. 1GB and 2MB, and does not access the 4KB page table. The access to the 4KB page table is undertaken by the Last Level Page Walker. If the Page Walker accesses a leaf node, i.e. a large page or an empty page, it returns to the first level TLB, otherwise it is sent to the Last Level Page Walker. The Page Walker can only process one request at a time.
 
-Last Level Page Walker 接收来自 Page Cache 和 Page Walker 的请求，访问最后一级页表。Last Level Page Walker 可以同时处理 N 个请求，N 为 Last Level Page Walker 的项数。因为对页表的访问集中于最后一级页表，因此 L2 TLB 主要通过 Last Level Page Walker 提高访存并行度，但同时限制 Page Walker 的访存能力，避免重复访存的发生。
+The Last Level Page Walker receives requests from Page Cache and Page Walker to access the last level of page table. The Last Level Page Walker can process N requests at the same time, where N is the number of items in the Last Level Page Walker. Because the access to the page table is concentrated on the last level page table, the L2 TLB mainly improves the parallelism of memory access through the Last Level Page Walker, but at the same time limits the memory access capability of the Page Walker to avoid repeated memory access.
 
-Miss Queue 接收来自 Page Cache 和 Last Level Page Walker 的请求，作为 miss 请求的缓冲，等待重新访问 Page Cache。
+The Miss Queue receives requests from the Page Cache and the Last Level Page Walker, and acts as a buffer for miss requests, waiting to re-access the Page Cache.
 
-Page Cache 的结果引发预取请求的产生，预取请求的处理请求与普通一级 TLB 请求相似，不同点在于：预取请求不会返回给一级 TLB；预取请求进入 Miss Queue 时，如果前两级页表 miss，会被直接丢弃，防止占用过多 Page Cache 和 Page Walker 的资源。目前采用 NextLine 预取算法。
+The result of the Page Cache triggers the generation of prefetch requests. The processing of prefetch requests is similar to that of ordinary first-level TLB requests. The difference is that the prefetch request will not be returned to the first-level TLB; when the prefetch request enters the Miss Queue, if the first two levels of page tables miss, it will be directly discarded to prevent excessive use of Page Cache and Page Walker resources. The NextLine prefetch algorithm is currently used.
 
 ## Repeater
 
-TLB 和 L2 TLB 因为有比较长的物理距离，就会导致比较长的线延迟，因此就需要在中间加拍，称为Repeater。
-Filter 在 Repeater 的基础上进行强化，接受 DTLB 的请求，发送给 L2 TLB。Filter 负责过滤掉重复的请求，避免一级 TLB 中出现重复项。Filter 的项数一定程度上决定了 L2 TLB 的并行度。
+Because the TLB and L2 TLB have a relatively long physical distance, it will cause a relatively long line delay, so it is necessary to add a beat in the middle, which is called Repeater.
+Filter is enhanced on the basis of Repeater, accepts the request of DTLB, and sends it to L2 TLB. Filter is responsible for filtering out duplicate requests to avoid duplicate items in the first-level TLB. The number of items in the filter determines the parallelism of the L2 TLB to a certain extent.
 
-## PMP 与 PMA
+## PMP and PMA
 
-香山实现了 PMP（Physical Memory Protection），具体实现上分为四部分：CSR Unit，ITLB，DTLB，L2TLB。在 CSR Unit 中，负责读写。在 ITLB，DTLB 和 L2 TLB 中，负责写以及地址检查的功能。在 DTLB 中，因为时序因素，分为动态检查和静态检查两部分。回填 DTLB 时，进行 PMP 检查，将结果存到 DTLB 中，PMP 的结果随 TLB 检查一并查询，此为静态检查。TLB 翻译后得到物理地址，再进行 PMP 检查，此为动态检查。为了实现静态检查，将 PMP 粒度提升至 4KB。
+Xiangshan implements PMP (Physical Memory Protection), which is divided into four parts: CSR Unit, ITLB, DTLB, and L2TLB. In the CSR Unit, it is responsible for reading and writing. In the ITLB, DTLB and L2 TLB, it is responsible for writing and address checking. In the DTLB, due to timing factors, it is divided into two parts: dynamic checking and static checking. When backfilling the DTLB, a PMP check is performed and the result is stored in the DTLB. The result of the PMP is queried together with the TLB check, which is a static check. After the TLB is translated, the physical address is obtained, and then a PMP check is performed, which is a dynamic check. In order to implement static checking, the PMP granularity is increased to 4KB.
 
-PMA 为自定义实现，采用类 PMP 的方式，利用 PMP Configure 寄存器的保留位实现 Cachable 和 Atmoic 的检查。PMA 与 PMP 并行查询。除此之外，额外提供 Memory Mapped 形式的 PMA，供 DMA 等外设使用。
+PMA is a custom implementation that uses a PMP-like method and uses the reserved bits of the PMP Configure register to implement cacheable and Atmoic checks. PMA and PMP are queried in parallel. In addition, a Memory Mapped PMA is provided for use by peripherals such as DMA.
