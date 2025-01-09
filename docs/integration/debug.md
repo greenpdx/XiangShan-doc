@@ -7,7 +7,7 @@ NANHU Debug Module supports Program Buffer (16 bytes) and System Bus Access. Abs
 It is connected to L3 crossbar using TileLink to support System Bus Access.
 It has two parts: DMInner and DMOuter. DMInner is driven by core clock while DMOuter is driven by JTAG clock. DMOuter issues debug interrupts.
 
-## Debug &nbsp; 调试
+## Debug 
 NANHU's CSR indicates whether it is in Debug Mode through a single bit register.
 
 Debug mode can be entered when:
