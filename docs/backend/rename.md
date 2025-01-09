@@ -1,40 +1,40 @@
-# 重命名 Rename
+# Cambiar nombre
 
-在乱序处理器中，重命名阶段负责管理和维护逻辑寄存器与物理寄存器之间的映射，通过对逻辑寄存器的重命名，实现指令间依赖的消除，并完成乱序调度。本节介绍的重命名主要包含 Rename, RenameTable, FreeList 三个模块，分别负责 Rename 流水级的控制、重命名表的维护和空闲寄存器的维护。
+En un procesador fuera de servicio, la etapa de cambio de nombre es responsable de administrar y mantener la correspondencia entre los registros lógicos y los registros físicos. Al cambiar el nombre de los registros lógicos, se eliminan las dependencias entre las instrucciones y se completa la programación fuera de servicio. El cambio de nombre presentado en esta sección incluye principalmente tres módulos: Rename, RenameTable y FreeList, que son responsables de controlar el nivel de la canalización de cambio de nombre, mantener la tabla de cambio de nombre y mantener los registros libres respectivamente.
 
-## 重命名表 RenameTable
+## Cambiar nombre de tabla RenameTable
 
-重命名表的作用是维护逻辑寄存器与物理寄存器之间的映射关系，其操作端口包括一组读口 `readPorts` 和一组写口 `specWritePorts`。重命名表内部包含 32 个物理寄存器堆地址宽度的寄存器，分别代表 32 个逻辑寄存器对应的物理寄存器地址。目前，定点和浮点寄存器堆各有一套重命名表，根据未来的指令扩展情况，重命名表可以被配置成记录更多的内容（如条件寄存器堆、向量寄存器堆等重命名状态）。
+La función de la tabla de cambio de nombre es mantener la relación de mapeo entre registros lógicos y registros físicos. Sus puertos de operación incluyen un conjunto de puertos de lectura `readPorts` y un conjunto de puertos de escritura `specWritePorts`. La tabla de cambio de nombre contiene 32 registros con el ancho de dirección de la pila de registros físicos, que representan las direcciones de registros físicos correspondientes a los 32 registros lógicos. Actualmente, los archivos de registro de punto fijo y de punto flotante tienen cada uno un conjunto de tablas de cambio de nombre. Según futuras ampliaciones de instrucciones, las tablas de cambio de nombre se pueden configurar para registrar más contenido (como el estado de cambio de nombre de los archivos de registro condicionales, archivos de registro vectorial, etc.).
 
-`readPorts` 是一组同步读接口，在 T+1 周期根据 T 周期的读地址和 `hold` 信号，对应地输出相应的重命名表读数据。在使用这一组端口时，读地址会在译码阶段进行赋值，并根据相应流水级的阻塞情况，对 `hold` 进行赋值。如果 `hold` 为 1，则读数据会保持不变，否则读数据将根据最新的读地址而更新。
+`readPorts` es un conjunto de interfaces de lectura sincrónicas, que genera los datos de lectura de la tabla de cambio de nombre correspondiente en el ciclo T+1 de acuerdo con la dirección de lectura y la señal `hold` del ciclo T. Al utilizar este conjunto de puertos, la dirección de lectura se asigna durante la fase de decodificación y la "retención" se asigna en función del estado de bloqueo de la etapa de canalización correspondiente. Si `hold` es 1, los datos leídos permanecerán sin cambios; de lo contrario, los datos leídos se actualizarán de acuerdo con la última dirección leída.
 
-`specWritePorts` 是一组写接口，根据重命名或者 ROB 回滚的状态，分别依据新指令重命名的信息和 ROB 回滚的信息，完成对重命名表的更新。T 周期的写数据会被更新至 T+1 周期的读数据中。
+`specWritePorts` es un conjunto de interfaces de escritura que actualizan la tabla de cambio de nombre en función de la información del nuevo cambio de nombre de instrucción y la reversión de ROB, respectivamente, dependiendo del estado del cambio de nombre o la reversión de ROB. Los datos de escritura del ciclo T se actualizarán en los datos de lectura del ciclo T+1.
 
-代码中的 `archWritePorts` 和 `debug_rdata` 两组端口仅用于调试使用，用来为 DiffTest 框架提供寄存器信息。
+Los dos grupos de puertos `archWritePorts` y `debug_rdata` en el código solo se utilizan para depurar y se utilizan para proporcionar información de registro al marco DiffTest.
 
 
-## 空闲寄存器列表 FreeList
+## Lista de registro gratuita FreeList
 
-FreeList 记录了所有的空闲寄存器状态，其大小是可以通过类参数 `size` 配置的。FreeList 本质上是一个队列，由入队指针、出队指针和队列存储组成。
+FreeList registra el estado de todos los registros libres y su tamaño se puede configurar a través del parámetro de clase `size`. FreeList es esencialmente una cola, que consta de un puntero de entrada en cola, un puntero de salida de cola y un almacenamiento de cola.
 
-初始化时，FreeList 中包含所有可用的物理寄存器。在我们的设计中，初始时逻辑寄存器 `i` 会被映射至物理寄存器 `i`，因此 FreeList 在初始状态下包含 32-191 共 160 个空闲物理寄存器号。重命名时，FreeList 会给出至多 `RenameWidth` 个空闲物理寄存器号供使用。物理寄存器被释放时（ROB 提交指令或者回滚），FreeList 每一拍至多可以进入 `CommitWidth` 个空闲物理寄存器号。
+Al inicializarse, la FreeList contiene todos los registros físicos disponibles. En nuestro diseño, el registro lógico `i` se asigna inicialmente al registro físico `i`, por lo que FreeList contiene 160 números de registros físicos libres del 32 al 191 en el estado inicial. Al cambiar el nombre, FreeList proporcionará como máximo `RenameWidth` números de registro físico libres para usar. Cuando se libera un registro físico (ROB confirma una instrucción o la revierte), FreeList puede ingresar como máximo `CommitWidth` números de registros físicos libres por tiempo.
 
-在香山处理器的设计中，针对定点物理寄存器支持多次引用，并通过引用计数表（RefTable）记录每一个物理寄存器被引用的次数。通过引用计数，香山支持将多个逻辑寄存器映射至同一个物理寄存器，并支持对 Move 指令的消除优化（Move Elimination）。在这种情况下，空闲的物理寄存器数量理论上最高可达到物理寄存器总数 - 1。因此，在香山处理器中，定点 FreeList 大小与物理寄存器堆大小相同（默认为 192），浮点 FreeList 大小是物理寄存器堆数量 - 32（默认为 160）。
+En el diseño del procesador Xiangshan, se admiten múltiples referencias para registros físicos de punto fijo, y la cantidad de veces que se hace referencia a cada registro físico se registra a través de una tabla de conteo de referencias (RefTable). A través del conteo de referencias, Xiangshan admite la asignación de múltiples registros lógicos al mismo registro físico y admite la optimización de eliminación (eliminación de movimiento) de instrucciones de movimiento. En este caso, el número de registros físicos libres puede teóricamente ser hasta el número total de registros físicos: 1. Por lo tanto, en los procesadores Xiangshan, el tamaño de FreeList de punto fijo es el mismo que el tamaño del archivo de registro físico (el valor predeterminado es 192), y el tamaño de FreeList de punto flotante es la cantidad de archivos de registro físico: 32 (el valor predeterminado es 160).
 
-目前，FreeList 在香山中共有两种实现，分别在不存在 / 存在引用计数功能的情况下使用，对应 `StdFreeList` 和 `MEFreeList`。对于不存在引用计数的情况，当发生 ROB 回滚时，FreeList 中释放的空闲寄存器一定是前面恰好被分配出的那一些，且与回滚指令中需要分配新物理寄存器的数量相同。在种情况下，FreeList 的存储不需要被重复写入，只需要将出队指针往前回滚即可。对于存在引用计数的情况，由于重复引用情况的存在（不需要通过 FreeList 分配，而是增加一个物理寄存器的引用计数），回滚的物理寄存器数量与 FreeList 的释放数量并不一定相同。在这种情况下，FreeList 需要维护几个写端口，方便通过引用计数机制来维护实际释放的物理寄存器。
+Actualmente, hay dos implementaciones de FreeList en Xiangshan, que se utilizan cuando no hay función de conteo de referencias o no, correspondientes a `StdFreeList` y `MEFreeList`. En el caso en que no haya recuento de referencias, cuando se produce una reversión de ROB, los registros libres liberados en FreeList deben ser aquellos que se asignaron justo antes, y la cantidad de nuevos registros físicos que se deben asignar en la instrucción de reversión es la mismo. En este caso, no es necesario escribir repetidamente el almacenamiento FreeList, solo hay que hacer retroceder el puntero de desencolado hacia adelante. En el caso del recuento de referencias, debido a la existencia de referencias duplicadas (no se requiere asignación a través de FreeList, pero se aumenta el recuento de referencias de un registro físico), la cantidad de registros físicos revertidos no es necesariamente la misma que la cantidad de registros liberados en FreeList. En este caso, FreeList necesita mantener varios puertos de escritura para facilitar el mantenimiento de los registros físicos reales liberados a través del mecanismo de conteo de referencias.
 
-### 引用计数表 RefTable
+### Tabla de recuento de referencias RefTable
 
-如前所述，引用计数表的作用是记录每一个物理寄存器被引用的次数，具有分配 `allocate`（增加引用次数）、取消分配 `deallocate`（减少引用次数）、释放物理寄存器（至 FreeList）`freeRegs` 三组模块接口。
+Como se mencionó anteriormente, la función de la tabla de recuento de referencias es registrar la cantidad de veces que se hace referencia a cada registro físico, con asignación `allocate` (aumentar la cantidad de referencias), desasignación `deallocate` (reducir la cantidad de referencias) , y liberación de registros físicos (a FreeList) `freeRegs` Tres conjuntos de interfaces de módulo.
 
-在存在引用计数功能的情况下，重命名对每一个物理寄存器的分配与释放都会告知 RefCounter。当一个物理寄存器的引用计数值变成 0 时，对应的物理寄存器会被释放进 FreeList 等待下次分配。为了时序的考虑，物理寄存器的释放会延后两拍进行。
+En presencia de conteo de referencias, cada asignación y desasignación de registro físico se notifica al RefCounter mediante un cambio de nombre. Cuando el valor de recuento de referencia de un registro físico llega a ser 0, el registro físico correspondiente se liberará en la FreeList y esperará la próxima asignación. Por cuestiones de tiempo, la liberación del registro físico se retrasará dos tiempos.
 
-## Rename
+## Cambiar nombre
 
-重命名流水级的主要作用是更新指令的物理寄存器信息，包括 `psrc`, `pdest` 和 `old_pdest`。`psrc` 和 `old_pdest` 一般来源于重命名表。当一条指令需要分配新的物理寄存器时，如定点指令需要写寄存器堆且目的寄存器非零号寄存器、浮点指令需要写寄存器堆时，`pdest` 来源于 `FreeList` 的分配结果。由于指令间依赖的存在，对于同一拍进行重命名的指令，Rename 模块需要负责在他们之间进行物理寄存器号的旁路，如当指令 1 需要使用指令 0 的结果时，指令 1 的对应源操作数需要来源于指令 1 的目的寄存器。
+La función principal de la etapa de cambio de nombre de la canalización es actualizar la información del registro físico de la instrucción, incluidos `psrc`, `pdest` y `old_pdest`. `psrc` y `old_pdest` generalmente provienen de una tabla de cambio de nombre. Cuando una instrucción necesita asignar un nuevo registro físico, como una instrucción de punto fijo que necesita escribir en la pila de registros y el registro de destino no es el registro cero, o una instrucción de punto flotante que necesita escribir en la pila de registros , `pdest` proviene del resultado de la asignación de `FreeList`. Debido a la existencia de dependencias entre instrucciones, para las instrucciones renombradas en el mismo beat, el módulo Rename debe ser responsable de omitir los números de registro físicos entre ellas. Por ejemplo, cuando la instrucción 1 necesita usar el resultado de la instrucción 0, el correspondiente Operación de origen de la instrucción 1 El número debe provenir del registro de destino de la instrucción 1.
 
-香山处理器实现了 Move 指令消除（Move Elimination）功能，在这种情况下，对 Move 指令不再分配新的物理寄存器，而是直接将其目的逻辑寄存器重命名至源操作数对应的物理寄存器。
+El procesador Xiangshan implementa la función de eliminación de movimiento. En este caso, no se asigna ningún registro físico nuevo para la instrucción de movimiento. En su lugar, su registro lógico de destino se renombra directamente al registro físico correspondiente al operando de origen.
 
-香山处理器还实现了对于 LUI 和 LOAD 指令对的操作数旁路功能，在这种情况下，LOAD 指令的基地址将被替换为立即数（而不是 LUI 的目的寄存器），替换是通过对 srcType 的修改完成的，立即数会被存入 psrc 和 imm 域中。
+El procesador Xiangshan también implementa la omisión de operandos para pares de instrucciones LUI y LOAD. En este caso, la dirección base de la instrucción LOAD será reemplazada por un valor inmediato (en lugar del registro de destino de la LUI). El reemplazo se realiza cambiando la srcType La modificación se completa y el valor inmediato se almacenará en los campos psrc e imm.
 
-在目前的实现中，为了时序的考虑，我们做了如下优化：在需要资源分配与仲裁的位置大多采用了保守策略，如浮点物理寄存器无空闲时，我们也将阻塞流水线，即使流水线里面只有定点指令；由于指令在 ROB 中是严格连续的，我们在重命名阶段提前为指令分配了 ROB 号，但仍然在后续阶段才判断 ROB 的入队仲裁，这样能够在不损失 ROB 实际可用项数、不影响性能的情况下通过提前一级锁存 ROB 号、增加几十个寄存器的方式完成时序优化。
+En la implementación actual, por cuestiones de tiempo, hemos realizado las siguientes optimizaciones: utilizamos principalmente estrategias conservadoras en lugares donde se requiere la asignación y el arbitraje de recursos. Por ejemplo, cuando no hay un registro físico de punto flotante libre, bloquearemos la tubería. incluso si solo hay instrucciones de punto fijo; dado que las instrucciones son estrictamente continuas en el ROB, asignamos números ROB a las instrucciones por adelantado durante la fase de cambio de nombre, pero aún determinamos el arbitraje de puesta en cola del ROB en la fase posterior, de modo que el número real de Los elementos disponibles en el ROB no se pierden. Sin afectar el rendimiento, la optimización de la sincronización se logra bloqueando el nivel número uno del ROB con anticipación y agregando docenas de registros.
