@@ -1,34 +1,31 @@
-# L2/L3 Cache 总体架构
+# Overall architecture of L2/L3 Cache
 
-XiangShan 南湖架构的 L2/L3 Cache (即 [huancun 子项目](https://github.com/OpenXiangShan/HuanCun)) 是参考 [block-inclusive-cache-sifive](https://github.com/sifive/block-inclusivecache-sifive) 设计的基于目录的 Non-inclusive Cache (inclusive directory, non-inclusive data)。
+L2/L3 Cache of XiangShan Nanhu architecture (i.e. [huancun subproject](https://github.com/OpenXiangShan/HuanCun)) is a directory-based non-inclusive cache (inclusive directory, non-inclusive data) designed with reference to [block-inclusive-cache-sifive](https://github.com/sifive/block-inclusivecache-sifive).
 
-huancun 以 Tilelink 为总线一致性协议，并可以通过添加自定义 Tilelink user-bit 解决在 L1 Cache 大于 32KB 时产生的 [Cache Alias 问题](./cache_alias.md)。
+huancun uses Tilelink as the bus consistency protocol and can solve the [Cache Alias ​​problem](./cache_alias.md) when the L1 Cache is larger than 32KB by adding a custom Tilelink user-bit.
 
-huancun 的总体结构如下图所示：
+The overall structure of huancun is shown in the figure below:
 ![](../figs/huancun.png)
 
-huancun 可根据请求的地址低位为索引分 Slice 以提升并发度。每个 Slice 内部的 [MSHR](./mshr.md) 数量可配，负责具体的任务管理。
+huancun can divide the index into slices according to the low bit of the requested address to improve concurrency. The number of [MSHR](./mshr.md) inside each Slice is configurable and is responsible for specific task management.
 
-[DataBanks ](./data.md)负责存储具体数据，可以通过参数配置 Bank 数量从而提升读写并行度。
+[DataBanks](./data.md) is responsible for storing specific data. The number of banks can be configured through parameters to improve read and write parallelism.
 
-[RefillBuffer ](./misc.md#refill_buffer)负责暂存 Refill 的数据，以直接 Bypass 到上层 Cache 而不需要经过 SRAM 写入。
+[RefillBuffer](./misc.md#refill_buffer) is responsible for temporarily storing Refill data so that it can be directly bypassed to the upper cache without writing through SRAM.
 
-Sink/Source\* 相关模块为 Tilelink [通道控制模块](./channels.md)，负责与标准 Tilelink 接口进行交互，一方面将外部请求转换为
-Cache 内部信号，另一方面接收 Cache 内部请求转换为 Tilelink 请求发出到接口。
+The Sink/Source\* related module is the Tilelink [channel control module](./channels.md), which is responsible for interacting with the standard Tilelink interface. On the one hand, it converts external requests into internal signals of the Cache, and on the other hand, it receives internal requests of the Cache and converts them into Tilelink requests and sends them to the interface.
 
-在[目录组织](./directory.md)上，huancun 将上层数据与本层数据的目录分开存储，
-Self Directory/Client Directory 分别为当前层级 Cache Data 所对应的目录和上层 Cache Data 所对应的目录。
+In the [directory organization](./directory.md), huancun stores the directories of the upper data and the current data separately.
+Self Directory/Client Directory are the directories corresponding to the current level Cache Data and the upper level Cache Data, respectively.
 
-另外，[预取器](./prefetch.md)采用了 BOP(Best-Offset Prefetching) 算法，可通过参数进行配置或裁减。
+In addition, the [prefetcher](./prefetch.md) uses the BOP (Best-Offset Prefetching) algorithm, which can be configured or trimmed through parameters.
 
+## The overall workflow of huancun is:
 
+1. The [channel control module](./channels.md) accepts Tilelink requests and converts them into internal cache requests.
 
-## huancun 的总体工作流程为：
+2. The [MSHR Alloc module](./misc.md#alloc) allocates an [MSHR](./mshr.md) for the internal request.
 
-1. [通道控制模块](./channels.md)接受 Tilelink 请求，将其转换为 Cache 内部请求。
+3. The [MSHR](./mshr.md) initiates different tasks according to the requirements of different requests. Task types include data reading and writing, sending new requests to upper and lower caches or returning responses, triggering or updating prefetchers, etc.
 
-2. [MSHR Alloc 模块](./misc.md#alloc)为内部请求分配一个 [MSHR](./mshr.md)。
-
-3. [MSHR](./mshr.md) 根据不同请求的需求发起不同的任务，任务类型包括 Data 读写、向上下层 Cache 发送新请求或返回响应、触发或更新预取器等。
-
-4. 当一个请求所需的全部操作在 [MSHR](./mshr.md) 中完成时，[MSHR](./mshr.md) 被释放，等待接收新的请求。
+4. When all operations required for a request are completed in the [MSHR](./mshr.md), the [MSHR](./mshr.md) is released and waits for new requests.
