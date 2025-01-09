@@ -1,41 +1,41 @@
 # Docker Instruction
-## 准备
-在需要部署的服务器上安装docker应用
-## 服务器导入docker镜像
-云盘下载链接：(7z自解压文件)
+## Preparation
+Install the docker application on the server to be deployed
+## Import the docker image on the server
+Cloud disk download link: (7z self-extracting file)
 
-[阿里云盘分享](https://www.aliyundrive.com/s/1abKfjYKWJ6)
+[Aliyun disk sharing](https://www.aliyundrive.com/s/1abKfjYKWJ6)
 
-Docker镜像MD5SUM：3ebafca4bfaa53c93abaf6ab3a3a8626
+Docker image MD5SUM: 3ebafca4bfaa53c93abaf6ab3a3a8626
 
-进入服务器后执行以下命令，结果如下
+After entering the server, execute the following command, the result is as follows
 ```
-docker load --input <服务器镜像路径(蓝字部分)>
-docker images   # 执行后可以看到image_id,大小为4.53GB
-pwd	  #执行后得到<宿主机上文件夹的绝对路径>
-docker run -it -v <宿主机上文件夹的绝对路径>:</home/your_name(尽量填名字方便找)> image_id /bin/bash
+docker load --input <server image path (blue part)>
+docker images # After execution, you can see image_id, the size is 4.53GB
+pwd #After execution, get <absolute path of the folder on the host>
+docker run -it -v <absolute path of the folder on the host>:</home/your_name (try to fill in the name for easy search)> image_id /bin/bash
 ```
 ![load_docker_image.jpeg](../figs/docker_images/load_docker_image.jpeg)
-## 进入容器，完成用户切换
+## Enter the container and complete the user switch
 ```
 addgroup --gid 5 your_name
 adduser --uid 4 --gid 5 your_name
-su your_name   #切换到用户, 至此环境部署完毕
+su your_name #Switch to the user, and the environment deployment is now complete
 ```
 ![user_switch_1.jpeg](../figs/docker_images/user_switch_1.jpeg)
 ![user_switch_2.jpeg](../figs/docker_images/user_switch_2.jpeg)
-## 添加环境变量
+## Add environment variables
 ```
 vim ~/.bashrc
-export  RISCV="/opt/riscv"
+export RISCV="/opt/riscv"
 export PATH=$RISCV/bin:$PATH
 export CROSS_COMPILE=riscv64-unknown-linux-gnu-
 export ARCH=riscv
-source  ~/.bashrc
+source ~/.bashrc
 ```
 ![set_env.jpeg](../figs/docker_images/set_env.jpeg)
-## 获取源码并编译
-### 获取源码并cp到服务器下
+## Get the source code and compile
+### Get the source code and cp to the server
 ```
 git clone git@github.com:OpenXiangShan/ns-bbl.git -b nanhu-dualcore-fpga
 cd ns-bbl
@@ -45,35 +45,35 @@ git clone git@github.com:openxiangshan/riscv-pk.git -b nanhu-mini-sys
 git clone git@github.com:openxiangshan/riscv-rootfs.git -b nanhu-nfs
 mkdir build
 cd ../
-scp -r ns-bbl/ your_name@<服务器IP>:<宿主机上文件夹的绝对路径>
+scp -r ns-bbl/ your_name@<server IP>:<absolute path of the folder on the host>
 ```
-### 定制app 到rootfs.cpio （选做）
+### Customize app to rootfs.cpio (optional)
 
-准备，在docker中先交叉编译定制app，生成可执行文件
+Preparation, cross-compile the customized app in docker first and generate an executable file
 
 ```
-例：将i2cdelect命令加入 rootfs.cpio
-cpio -imdv < rootfs.cpio  //解压原始rootfs.cpio
-chmod 777 i2cdelect | cp i2cdelect /usr/bin/  //可执行文件需要赋777权限
+Example: add i2cdelect command to rootfs.cpio
+cpio -imdv < rootfs.cpio //Unzip the original rootfs.cpio
+chmod 777 i2cdelect | cp i2cdelect /usr/bin/ //The executable file needs to be given 777 permissions
 sudo chown -R root:root .
-find . | cpio -o -H newc > ../rootfs.cpio  //打包新的rootfs.cpio
-cp ../rootfs.cpio ns-bbl  //拷贝使用
+find . | cpio -o -H newc > ../rootfs.cpio //Package the new rootfs.cpio
+cp ../rootfs.cpio ns-bbl //copy and use
 ```
-### 编译
+### compile
 ```
 cd riscv-linux
 make nanhu_fpga_defconfig
 cd ../
-make sw -j200  #完成后buid目录下有linux.bin
+make sw -j200 #After completion, there is linux.bin in the buid directory
 ```
 ![compile.jpeg](../figs/docker_images/compile.jpeg)
-### 生成烧录FPGA的txt文件
-在linux环境下使用下面的工具，将linux.bin生成烧录FPGA的txt文件
+### Generate a txt file for burning FPGA
+Use the following tools in the Linux environment to generate a txt file for burning FPGA from linux.bin
 
 [bin2fpgadata.tar.gz](https://raw.githubusercontent.com/OpenXiangShan/XiangShan-doc/main/docs/integration/resources/bin2fpgadata.tar.gz)
 ```
-#生成data.txt
-<bin2fpgadata路径>/bin2fpgadata -i linux.bin
+#Generate data.txt
+<bin2fpgadata path>/bin2fpgadata -i linux.bin
 ```
-## 测试
-按照[基于南湖的FPGA开源最小系统构建](https://xiangshan-doc.readthedocs.io/zh_CN/latest/integration/fpga/#_1)中演示的操作，将生成好的txt文件放到最小系统中就能进行测试
+## Test
+Follow the operation demonstrated in [Building an open source minimum system for FPGA based on Nanhu](https://xiangshan-doc.readthedocs.io/zh_CN/latest/integration/fpga/#_1), put the generated txt file into the minimum system and you can test it
