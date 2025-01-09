@@ -1,16 +1,16 @@
-# L2预取器设计
+# L2 prefetcher design
 
-XiangShan的L2 Cache采用了Best-Offset硬件预取。BOP是一种基于偏移量的预取器，偏移量可以随着程序动态执行的情况动态调整，其主要目的是保证预取的及时性(Timeliness)。
+XiangShan's L2 Cache uses Best-Offset hardware prefetching. BOP is an offset-based prefetcher. The offset can be adjusted dynamically as the program is executed. Its main purpose is to ensure the timeliness of prefetching.
 
-具体的预取算法可以参考论文，下面只介绍与XiangShan具体实现有关的部分。
+For the specific prefetching algorithm, please refer to the paper. The following only introduces the part related to XiangShan's specific implementation.
 
 <!--
-这里可能需要一张图
+You may need a picture here
 -->
-首先，L2的目录中会用一位prefetch位记录一个cache块是否是预取上来的块。当MSHR接收到DCache的Acquire请求，如果该请求地址在L2不命中或者命中了预取上来的块，MSHR就会发起一个“触发预取”的请求，该请求会发给预取器，预取器会在请求地址的基础上，加上根据Best-offset算法训练出来的最佳偏移量，生成预取地址，然后预取器会将预取请求发送到该地址所在的bank，请求类型为Intent，MSHR分配器为预取请求分配一项MSHR，如果预取块不在L2中，MSHR会负责从L3把预取块拿上来。
+First, a prefetch bit is used in the L2 directory to record whether a cache block is a prefetched block. When MSHR receives an Acquire request from DCache, if the requested address does not hit in L2 or hits the prefetched block, MSHR will initiate a "trigger prefetch" request, which will be sent to the prefetcher. The prefetcher will add the best offset trained by the Best-offset algorithm to the request address to generate the prefetch address, and then the prefetcher will send the prefetch request to the bank where the address is located. The request type is Intent. The MSHR allocator allocates an MSHR for the prefetch request. If the prefetch block is not in L2, MSHR will be responsible for fetching the prefetch block from L3.
 
-当MSHR完成一次预取，会再发送一个响应到预取器，预取器会根据这个响应训练Best-offset算法。
+When MSHR completes a prefetch, it will send another response to the prefetcher, and the prefetcher will train the Best-offset algorithm based on this response.
 
 <!--
-TODO: 记得引用！！！
+TODO: Remember to quote! ! !
 -->
