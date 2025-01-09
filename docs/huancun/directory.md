@@ -1,55 +1,45 @@
-# 目录设计
+# Directory Design
 
-本章将介绍 huancun 中目录的设计。本章中所指的“目录”是广义的，包含元数据和 Tag。
+This chapter will introduce the design of the directory in huancun. The "directory" referred to in this chapter is broad, including metadata and tags.
 
-huancun 是基于目录结构的 Non-inclusive Cache，在设计过程中受到了 NCID[^ncid] 的启发。多级 Cache 之间，数据是 Non-inclusive 的，而目录则是 Inclusive 的。在结构组织上，huancun 将上层数据的目录与本地数据的目录分开存储，两者结构类似。目录使用 SRAM 搭建，以 Set 为索引，每一个 Set 中有 Way 路数据。
+huancun is a non-inclusive cache based on the directory structure, and was inspired by NCID[^ncid] during the design process. Between multi-level caches, data is non-inclusive, while the directory is inclusive. In terms of structural organization, huancun stores the directory of upper-level data and the directory of local data separately, and the structures of the two are similar. The directory is built using SRAM, with Set as the index, and each Set contains Way data.
 
+Each item in the local data directory stores the following information:
 
+* state: stores the permissions of the data block (one of Tip/Trunk/Branch/Invalid)
 
-本地数据目录中每一项保存了如下的信息：
+* dirty: indicates whether the data block is dirty
 
-* state：保存该数据块的权限（Tip/Trunk/Branch/Invalid 中的一种）
-* dirty：指示该数据块是否脏的
-* clientStates：保存了该数据块在上层的权限情况（仅在该块非 Invalid 下有意义）
-* prefetch：指示该数据块是否是被预取的
+* clientStates: stores the permissions of the data block in the upper layer (only meaningful when the block is not Invalid)
 
+* prefetch: indicates whether the data block is prefetched
 
+Each item in the upper data directory stores the following information:
 
-上层数据目录中每一项保存了如下的信息：
+* state: stores the permissions of the upper data block
 
-* state：保存该上层数据块的权限
-* alias：保存该上层数据块的虚地址末位（即 alias bit，详见[Cache 别名问题](./cache_alias.md)）
+* alias: stores the last bit of the virtual address of the upper data block (i.e. alias bit, see [Cache alias problem](./cache_alias.md) for details)
 
+## Directory reading
 
+When the MSHR Alloc module allocates a request into the MSHR, it will also initiate a read request to the directory at the same time. Read the metadata and tags of the upper and local layers in parallel, determine whether it hits based on the tag comparison, and pass the metadata of the corresponding path to the corresponding MSHR based on the hit situation.
 
-## 目录读取
+When the directory hits, the path passed is the hit path; when the directory misses, the path passed is the path obtained according to the replacement algorithm. The replacement algorithm can be flexibly configured. The local data directory of the Nanhu version uses the PLRU replacement algorithm, and the upper data directory uses the random replacement algorithm.
 
-当 MSHR Alloc 模块将一个请求分配进入 MSHR 时，它也会同时向目录发起读请求。并行读取上层与本地的元数据与 Tag，根据 Tag 比对判断是否命中，依命中情况将相应路的元数据传递到对应的 MSHR 中。
+## Directory write
 
-目录命中时，传递的路即为命中的路；目录未命中时，传递的路是根据替换算法得到的路。替换算法可灵活配置，南湖版本本地数据目录使用 PLRU 替换算法，上层数据目录使用随机替换算法。
+When the MHSR transaction processing is nearing the end, it is usually necessary to write the directory to update the status, tag and other information. The directory has 4 write request ports, which receive the write of local metadata, upper metadata, local tag and upper tag respectively. The priority of the write request is higher than the read request.
 
+In terms of connection relationship, the above 4 write requests of all MSHRs are arbitrated separately in the directory. Among them, the arbitration priority relationship is carefully designed to avoid request nesting errors or deadlocks.
 
+## Common problems and design considerations
 
-## 目录写入
+#### The directory already has upper metadata, why is there clientStates in the local metadata?
 
-当 MHSR 事务处理接近尾声时，通常会需要写目录以更新状态、Tag 等信息。目录有 4 个写请求端口，分别接收本地元数据、上层元数据、本地 Tag 和上层 Tag 的写入。写请求的优先级高于读请求。
+* When a request, such as Acquire BLOCK_A, misses in the local directory, the directory will select a path to pass to MSHR according to the replacement algorithm. At this time, this path may not be invalid, but has a data block BLOCK_B. In order to complete this Acquire request, we need to know the status information of BLOCK_B in the upper layer. In order to avoid reading the directory twice, we will store an additional clientStates in the local metadata.
 
-连接关系上，所有 MSHR 的上述 4 种写请求分开仲裁到目录中。其中，仲裁优先级关系被精心设计以避免发生请求嵌套错误或者死锁。
+#### Will there be read-write competition risks in the directory?
 
-
-
-## 常见问题与设计考量
-
-#### 目录中已经有了上层元数据，为什么本地元数据中还会存 clientStates？
-
-* 当一个请求，比如 Acquire BLOCK_A，在本地目录中 Miss 时，目录会根据替换算法选择一路的信息传递到 MSHR，此时这一路可能并不是无效的，而是有一个数据块 BLOCK_B。为了完成此 Acquire 请求，我们需要知道 BLOCK_B 在上层的状态信息。为了避免二次读目录，我们会在本地元数据中额外存一份 clientStates。
-
-
-
-#### 目录是否会出现读写竞争冒险？
-
-* 我们的 MSHR 是按照 Set 阻塞的，且仅当 MSHR 释放后才会让新请求进入并读取目录，因此不会出现读写竞争冒险。
-
-
+* Our MSHR is blocked according to Set, and new requests will be allowed to enter and read the directory only when MSHR is released, so there will be no read-write competition risks.
 
 [^ncid]: Zhao, Li, et al. "NCID: a non-inclusive cache, inclusive directory architecture for flexible and efficient cache hierarchies." *Proceedings of the 7th ACM international conference on Computing frontiers*. 2010.
