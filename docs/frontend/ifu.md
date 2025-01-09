@@ -1,64 +1,67 @@
-# 取指令单元（Instruction Fetch Unit）文档
+# Instruction Fetch Unit Documentation
 ![ifu](../figs/frontend/IFU.png)
 
-这一章描述香山处理器取指单元（IFU）的实现，取指单元流水线如上图所示。
+This chapter describes the implementation of the Instruction Fetch Unit (IFU) of the Xiangshan processor. The pipeline of the instruction fetch unit is shown in the figure above.
 
-南湖架构的 IFU 采用了 4 级流水线的结构，相较于雁栖湖版本 IFU 的设计做了非常大的简化，这得益于采用分支预测 - 指令缓存解耦的取指令架构。
+The IFU of the Nanhu architecture adopts a 4-stage pipeline structure, which is greatly simplified compared to the design of the Yanqi Lake version IFU, thanks to the branch prediction-instruction cache decoupled instruction fetch architecture.
 
-一个取指令请求从 FTQ 发出之后在 IFU 中经历了下面几个阶段：
+After an instruction fetch request is sent from the FTQ, it goes through the following stages in the IFU:
 
-- 从 FTQ 发送过来的取指令请求包含了一个 32 bytes 指令码 （称为一个指令块 ） 的起始地址和下一个跳转目标的地址，
-- 在 `IFU0` 阶段同时发送请求给 IFU 流水线和 ICache 模块。
-- `IF1` 阶段会做一些简单计算（例如这个指令块里每个 2 bytes， 即每一条可能的指令的 PC ）。
-- `IF2` 阶段等到指令缓存返回最多两个 cache line 的数据（因为可能存在这个 [指令块 跨行](#crossfetch) 的情况）之后，第一步先做指令切分，将在取指令地址之外的指令码抛弃得到有效范围的指令码。送入预译码器进行[预译码](#predecode)，同时将 16 bits 的压缩指令扩展为 32 bits 的指令。
-- `IF3` 阶段首先会将预译码结果送到 [分支预测检查器](#predchecker) 里，发现错误就会在下一拍刷新 IFU 流水线并把信息发送给 FTQ 刷新预测器并重新取指令。未发现错误的缓存在指令缓冲队列（IBuffer）里等待译码。
-- `IF3` 阶段还会根据地址翻译的结果向指令 MMIO 模块发起取指令请求，同时转变为 [MMIO 取指令模式](#mmiofetch)，指令一条一条顺序执行。
-- IFU 控制逻辑还需要 [处理半条 RVI 指令](#half) 的情况。
+- The instruction fetch request sent from the FTQ contains a 32-byte instruction code (called an instruction block) with the starting address and the address of the next jump target,
 
-<h2 id=predecode></h2>
-## 预译码 
+- In the `IFU0` stage, the request is sent to the IFU pipeline and the ICache module at the same time.
 
-预译码器将经过切分的 16 个 16 bits 指令码进行译码，得到部分指令信息（是否是跳转指令、跳转指令类型以及是否是压缩指令等），对于跳转指令还会计算它的目标地址。主要是为了给 [分支预测检查器](#predchecker) 提供指令信息和正确的目标地址以及及时更新预测器中的指令信息。
+- The `IF1` stage will do some simple calculations (for example, each 2 bytes in this instruction block, that is, the PC of each possible instruction).
+- In the `IF2` stage, after the instruction cache returns data of up to two cache lines (because there may be a situation where the instruction block crosses lines), the first step is to split the instruction, discard the instruction code outside the instruction fetch address, and get the instruction code in the valid range. Send it to the predecoder for predecoding, and expand the 16-bit compressed instruction to a 32-bit instruction.
+- In the `IF3` stage, the predecoding result will first be sent to the [branch prediction checker](#predchecker). If an error is found, the IFU pipeline will be refreshed in the next beat and the information will be sent to the FTQ to refresh the predictor and fetch the instruction again. The cache without error is waiting for decoding in the instruction buffer queue (IBuffer).
+- In the `IF3` stage, according to the result of address translation, it will also initiate an instruction fetch request to the instruction MMIO module, and at the same time change to [MMIO instruction fetch mode](#mmiofetch), and the instructions will be executed one by one in sequence.
+- The IFU control logic also needs to [handle half of the RVI instruction](#half).
 
-另一方面，预译码器也会将压缩指令（如果这个指令块里有的话）扩展为 32 bits 的长指令以便于后续简化译码逻辑。
 
-<h2 id=predchecker></h2>
-##  分支预测检查 
+## Predecoding
 
-分支预测检查器在拿到指令的预译码信息之后主要针对以下几个错误检查：
+The predecoder decodes the 16 16-bit instruction codes after segmentation to obtain some instruction information (whether it is a jump instruction, the type of jump instruction, whether it is a compressed instruction, etc.), and calculates its target address for the jump instruction. This is mainly to provide the [branch prediction checker](#predchecker) with instruction information and the correct target address and to update the instruction information in the predictor in a timely manner.
 
-- jump 指令预测不跳转的错误：针对 `jal` 和 `ret` 这两种种必定跳转的指令检查，如果这个块的 [有效指令范围](#validinstr) 内有这两种指令，且预测为不跳转，则视为预测错误。
-- 非跳转指令的预测错误：如果预测为跳转的指令不在有效指令范围内，或者在有效指令范围内但是不是一条跳转指令，则视为预测错误。
-- 目标地址错误：对于可以通过指令码知道目标地址的跳转指令（除了 `jalr` 之外的跳转指令），如果在有效指令范围内且预测跳转并且跳转目标地址和正确地址不匹配，则视为预测错误。
+On the other hand, the predecoder will also expand the compressed instruction (if there is one in this instruction block) to a 32-bit long instruction to simplify the decoding logic later.
 
-在发现错误后，分支预测检查器挑选出指令顺序最靠前的预测错误指令，把错误信息（错误指令在块里的位置、指令预译码信息、正确的目标地址）传递给 FTQ ，同时清空 IFU 流水线。IFU 等待 FTQ 重新发取指令请求。
 
-<h2 id=crossfetch></h2>
-##  跨行指令处理（Cross-line Fetch）
+## Branch prediction check
 
-由于我们的指令块包括了 32 bytes 的指令码，相当于半个 cache line（64 Bytes）的大小，如果这个块的起始地址在后半个 cache line 里，那么完全有可能发生块的范围跨过两个 cache line 的情况，因此在指令缓存支持一次取两个 cache line 以保证这种情况下的指令吞吐。具体做法是当 FTQ 发现块的起始地址在后半个 cache line 里，就发起对指令缓存两个相邻 cache line 的请求。
+After getting the pre-decoding information of the instruction, the branch prediction checker mainly checks for the following errors:
 
-<h2 id=validinstr></h2>
-##  有效指令范围 
+- Errors in predicting that jump instructions do not jump: Check for the two instructions that must jump, `jal` and `ret`. If these two instructions are in the [valid instruction range](#validinstr) of this block and are predicted not to jump, it is considered a prediction error.
+- Prediction errors of non-jump instructions: If the instruction predicted to jump is not in the valid instruction range, or is in the valid instruction range but is not a jump instruction, it is considered a prediction error.
+- Target address error: For jump instructions whose target address can be known from the instruction code (except jump instructions other than `jalr`), if it is in the valid instruction range and is predicted to jump and the jump target address does not match the correct address, it is considered a prediction error.
 
-一个取指令块的有效范围由 FTQ 给出的起始地址和跳转指令的 index（如果有跳转的话）共同确定，如果这个块没有跳转指令，则默认指令有效范围为起始地址开始的 256 bits。
+After discovering an error, the branch prediction checker selects the most predictive error instruction in the previous instruction sequence, passes the error information (the position of the error instruction in the block, instruction pre-decoding information, and the correct target address) to the FTQ, and clears the IFU pipeline. The IFU waits for the FTQ to resend the instruction fetch request.
 
-有效指令范围可能被 IFU 的检查重新确定，主要包括：
 
-* 分支预测检查发现有未预测跳转的 `jal` 和 `ret` 指令时，需要重新将有效指令范围缩短到第一条这样的跳转指令；
-* 前一个块有半条 RVI 的情况，紧随其后的这个块的第一个 16 bits 不在有效指令范围内。
-* MMIO 请求的块的指令有效范围只有 32 bits
+## Cross-line Fetch
 
-<h2 id=mmiofetch></h2>
-## MMIO 取指令 
+Since our instruction block includes 32 bytes of instruction code, which is equivalent to the size of half a cache line (64 Bytes), if the starting address of this block is in the second half of the cache line, it is entirely possible that the range of the block spans two cache lines. Therefore, the instruction cache supports fetching two cache lines at a time to ensure instruction throughput in this case. The specific approach is that when the FTQ finds that the starting address of the block is in the second half of the cache line, it initiates a request for two adjacent cache lines of the instruction cache.
 
-在 `IF3` 阶段，如果 ITLB 发现这个地址是 MMIO 空间的，IFU 就启动 MMIO 取指令模式，向指令 MMIO 模块发送请求，指令 MMIO 模块向 MMIO 总线发送 `Get` 请求 64 bits 的数据，等待总线返回后根据 IFU 的请求地址对数据进行裁剪，返回指令码。IFU 将指令码进行扩展之后发送给指令缓冲队列。同时，IFU 阻塞流水线，侦听 ROB 的 commit 信号，直到指令执行完后发送前端重定向取下一条指令。
 
-MMIO 请求每次只取一条指令，因此在这种模式下处理器的指令执行速度会变得非常慢。
+## Valid instruction range
 
-<h2 id=half></h2>
-##  半条 RVI 指令的处理 
+The valid range of a fetch instruction block is determined by the starting address given by FTQ and the index of the jump instruction (if there is a jump). If there is no jump instruction in this block, the default instruction valid range is 256 bits starting from the starting address.
 
-当一个指令块在 `IF3` 阶段发现它的最后 2 bytes 是一条 RVI 指令的前半部分时，我们把这条 RVI 指令算在这个块里，同时我们取两个 cache line 的机制保证后半部分是一定可以被取到的，因此我们只需要在发生这种情况的时候置一个标识位，当下一个块来的时候把第一个 2 bytes 排除在指令的有效范围之外即可。
+The valid instruction range may be re-determined by the IFU check, mainly including:
+
+* When the branch prediction check finds unpredicted jumps of `jal` and `ret` instructions, the valid instruction range needs to be shortened to the first such jump instruction;
+
+* When the previous block has half an RVI, the first 16 bits of the following block are not in the valid instruction range.
+* The effective range of the instruction of the block requested by MMIO is only 32 bits
+
+
+## MMIO instruction fetch
+
+In the `IF3` stage, if ITLB finds that the address is in the MMIO space, IFU starts the MMIO instruction fetch mode and sends a request to the instruction MMIO module. The instruction MMIO module sends a `Get` request for 64 bits of data to the MMIO bus, waits for the bus to return, and then cuts the data according to the IFU's request address and returns the instruction code. IFU extends the instruction code and sends it to the instruction buffer queue. At the same time, IFU blocks the pipeline and listens to the commit signal of ROB until the instruction is executed and sends the front-end redirection to fetch the next instruction.
+
+MMIO requests only fetch one instruction at a time, so the instruction execution speed of the processor will become very slow in this mode.
+
+
+## Handling of half RVI instruction
+
+When an instruction block finds that its last 2 bytes are the first half of an RVI instruction in the `IF3` stage, we count this RVI instruction in this block. At the same time, our mechanism of fetching two cache lines ensures that the second half can be fetched. Therefore, we only need to set a flag when this happens, and exclude the first 2 bytes from the valid range of the instruction when the next block comes.
 
 --8<-- "docs/frontend/abbreviations.md"
