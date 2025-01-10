@@ -1,12 +1,12 @@
-# Refill Pipe
+# Tubo de recarga
 
-NanHu 架构相比于 YanqiHu 架构添加了专门的回填流水线 Refill Pipe. 对于 load 或 store 的 miss 请求, 在进入 Miss Queue 之前会选择出替换路, 在拿到 L2 返回的数据后就可以发送到 Refill Pipe, 因此只需要一拍即可将回填数据写入 DCache, 而无需再访问一遍 DCache.
+En comparación con la arquitectura YanqiHu, la arquitectura NanHu agrega una tubería de relleno dedicada, Refill Pipe. Para una solicitud de falla de carga o almacenamiento, se seleccionará una ruta de reemplazo antes de ingresar a la cola de fallas. Después de obtener los datos devueltos por L2, se pueden enviar a el conducto de recarga. Por lo tanto, solo se necesita una operación para escribir los datos de recarga en DCache, sin tener que acceder a DCache nuevamente.
 
-##  Refill Pipe 和 Main Pipe 的读写冲突问题
+## Conflicto de lectura y escritura entre la tubería de recarga y la tubería principal
 
-Refill Pipe 和 Main Pipe 都会对 DCache 进行写操作, 其中 Refill Pipe 一拍完成, 而 Main Pipe 要经过读 tag, 读 data 等共四级流水才将数据写入 DCache. 为了保证在 Main Pipe 中前后读写数据的一致性, 即读和写不会被 Refill Pipe 的写操作打断, Refill Pipe 在下述情况下会被阻塞而暂时不能写入 DCache:
+Tanto la tubería de recarga como la tubería principal escribirán en DCache. La tubería de recarga se completa de una sola vez, mientras que la tubería principal debe pasar por cuatro etapas de tuberías, como la lectura de etiquetas y la lectura de datos, antes de escribir datos en DCache. . Para garantizar la coherencia de los datos de lectura y escritura del front-end y back-end en la tubería principal, es decir, la lectura y escritura no se interrumpirán por la operación de escritura de la tubería de recarga. La tubería de recarga se bloqueará y se almacenará temporalmente. No se puede escribir en DCache en los siguientes casos:
 
-* Refill Pipe 的请求和 Main Pipe 的 Stage 1 存在 set 冲突;
-* Refill Pipe 的请求和 Main Pipe 的 Stage 2 / Stage 3 存在 set 冲突且有相同的路使能信号 `way_en`.
+* Existe un conflicto de conjunto entre la solicitud de la tubería de recarga y la etapa 1 de la tubería principal;
+* La solicitud de Refill Pipe ha establecido un conflicto con la Etapa 2 / Etapa 3 de Main Pipe y tiene la misma forma de habilitar la señal `way_en`.
 
-其中 Main Pipe 会在 Stage 1 完成 tag 比较并得出 `way_en`, 但是由于时序比较紧张, 这里放松了 Main Pipe Stage 1 对 Refill Pipe 的阻塞策略, 只根据 set 阻塞即可.
+La tubería principal completará la comparación de etiquetas en la Etapa 1 y obtendrá `way_en`, pero debido al cronograma ajustado, la estrategia de bloqueo de la Etapa 1 de la tubería principal para la tubería de recarga se relaja aquí, y solo se realiza el bloqueo de acuerdo con el conjunto. suficiente.
