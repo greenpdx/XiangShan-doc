@@ -1,49 +1,49 @@
-# 原子指令的实现
+# Implementación de instrucciones atómicas
 
-本章介绍香山处理器南湖架构的原子指令处理流程。
+Este capítulo presenta el flujo de procesamiento de instrucciones atómicas de la arquitectura Nanhu del procesador Xiangshan.
 
-!!! note
-    原子指令的处理流程在下个版本可能发生变动
+!!! nota
+ El flujo de procesamiento de instrucciones atómicas puede cambiar en la próxima versión
 
-## 原子指令的执行流程
+## Proceso de ejecución de instrucciones atómicas
 
-南湖架构的原子指令由一个单独的状态机负责控制执行. 一条原子指令会经历以下状态:
+Las instrucciones atómicas de la arquitectura Southlake están controladas por una máquina de estados independiente. Una instrucción atómica pasa por los siguientes estados:
 
-* s_invalid: 状态机空闲
-* s_tlb: 原子指令发出 TLB 查询请求
-* s_pm: 完成 TLB 查询和地址例外检查
-* s_flush_sbuffer_req: 发出 sbuffer/sq flush 请求
-* s_flush_sbuffer_resp: 等待 sbuffer/sq flush 请求完成
-* s_cache_req: 向 dcache 发起原子指令操作
-* s_cache_resp: 等待 dcache 返回原子指令结果
-* s_finish: 结果写回
+* s_invalid: máquina de estados inactiva
+* s_tlb: la instrucción atómica emite una solicitud de consulta TLB
+* s_pm: realiza la búsqueda de TLB y la verificación de excepciones de dirección
+* s_flush_sbuffer_req: emite una solicitud de vaciado de sbuffer/sq
+* s_flush_sbuffer_resp: esperar a que se complete la solicitud de vaciado de sbuffer/sq
+* s_cache_req: inicia la operación de instrucción atómica en dcache
+* s_cache_resp: espera a que dcache devuelva el resultado de la instrucción atómica
+* s_finish: escribe el resultado nuevamente
 
-对于 store 指令, 只有在它的 addr 和 data 都就绪时, 处理流程才会开始.
+Para una instrucción de tienda, el procesamiento solo comenzará cuando su dirección y datos estén listos.
 
-## dcache 对原子指令的支持
+## Soporte de dcache para instrucciones atómicas
 
-目前, 香山(南湖架构)的所有原子指令都是在 dcache 处理的. dcache 使用主流水线(MainPipe)执行原子指令. MainPipe 若发现原子指令 miss, 则会向 MissQueue 发起请求. MissQueue 从 l2 cache 取得数据后, 再执行原子指令. 若原子指令执行时 MissQueue 满, 则不断尝试重发原子指令, 直到 MissQueue 接收原子指令的 miss 重填请求为止. dcache 内部使用一个一项的 `AtomicsReplayEntry` 来负责原子指令的调度.
+Actualmente, todas las instrucciones atómicas de Xiangshan (arquitectura Nanhu) se procesan en dcache. dcache utiliza la tubería principal (MainPipe) para ejecutar instrucciones atómicas. Si MainPipe detecta que la instrucción atómica falla, enviará una solicitud a MissQueue. Después de que MissQueue obtenga los datos desde la caché l2 y luego ejecute la instrucción atómica. Si MissQueue está llena cuando se ejecuta la instrucción atómica, seguirá intentando reenviar la instrucción atómica hasta que MissQueue reciba la solicitud de reabastecimiento por error de la instrucción atómica. El dcache utiliza un elemento por elemento `AtomicsReplayEntry` para programar la instrucción atómica.
 
-### 对于 lr/sc 的特殊支持
+### Soporte especial para lr/sc
 
-RISC-V spec 定义了 constrained LR/SC loops (参见 Volume I: RISC-V Unprivileged ISA: 8.3 Eventual Success of Store-Conditional Instructions). 受到 Rocket 的启发, 香山提供了类似的机制来处理 constrained LR/SC loops.
+La especificación RISC-V define bucles LR/SC restringidos (consulte Volumen I: RISC-V Unprivileged ISA: 8.3 Eventual Success of Store-Conditional Instructions). Inspirado por Rocket, Xiangshan proporciona un mecanismo similar para manejar bucles LR/SC restringidos.
 
-在 lr 指令执行之后, 处理器会依次进入以下三种状态:
+Después de ejecutar la instrucción lr, el procesador ingresará a los siguientes tres estados en secuencia:
 
-1. 阻塞对当前核当前 cacheline 的所有 probe 请求并阻塞后续 lr 的执行, 持续一段时间 (`lrscCycles` - `LRSCBackOff` cycles)
-1. 持续阻塞后续 lr 的执行, 但允许对这一 cacheline 的 probe 请求执行, 持续一段时间 (`LRSCBackOff` cycles)
-1. 恢复到正常状态
+1. Bloquear todas las solicitudes de sondeo a la línea de caché actual del núcleo actual y bloquear la ejecución de lr subsiguientes durante un período de tiempo (ciclos `lrscCycles` - `LRSCBackOff`)
+1. Continuar bloqueando la ejecución de LR posteriores, pero permitir que las solicitudes de sondeo para esta línea de caché se ejecuten durante un período de tiempo (ciclos `LRSCBackOff`)
+1. Volver al estado normal
 
-对于香山(南湖), 在 `lrscCycles` - `LRSCBackOff` 周期内, constrained LR/SC loop (最多 16 条指令) 一定能执行完. 在这段时间内, 对 LR 所设置的 reservation set 中地址的 probe 操作将会被阻塞. 当前 hart 能不被打扰的执行一个成功的 SC. 随后的 `LRSCBackOff` 周期内后续的 lr 不会执行, 来防止两个核同时执行 lr, 结果两者都不能接受 probe 请求, 两者都拿不到权限从而卡死的情况. 加入这个退避阶段后, 来自其他核的 probe 请求可以取得 cacheline 的权限.
+Para Xiangshan (Nanhu), el bucle LR/SC restringido (hasta 16 instrucciones) debe ejecutarse dentro del ciclo `lrscCycles` - `LRSCBackOff`. Durante este tiempo, se sondea la dirección en el conjunto de reserva establecido por LR. La operación se bloqueará. El núcleo actual puede realizar una SC exitosa sin interrupción. Los LR subsiguientes no se ejecutarán durante el ciclo `LRSCBackOff` subsiguiente para evitar que dos núcleos ejecuten LR al mismo tiempo, lo que provocaría que ninguno pueda aceptar solicitudes de sondeo. Ninguno de ellos puede obtener el permiso y, por lo tanto, se quedan bloqueados. Después de agregar esta fase de retroceso, las solicitudes de sondeo de otros núcleos pueden obtener permisos de línea de caché.
 
-### 对于 amo 指令的支持
+### Soporte para el comando amo
 
-dcache 会在 mainpipe 中进行 amo 指令所定义的运算操作. 参见 [dcache mainpipe](../dcache/main_pipe.md#stage-2) 部分. 
+dcache realizará operaciones definidas por las directivas amo en mainpipe. Consulte la sección [dcache mainpipe](../dcache/main_pipe.md#stage-2).
 
-## 原子指令的例外处理
+## Manejo de excepciones para instrucciones atómicas
 
-地址检查机制检查到例外时, 原子指令状态机会直接从 `s_pm` 进入 `s_finish`, 不会触发 store queue 和 sbuffer 刷新操作, 不会产生实际访存请求. dcache 不会感知到原子指令.
+Cuando el mecanismo de verificación de direcciones detecta una excepción, la máquina de estado de instrucciones atómicas ingresará directamente `s_finish` desde `s_pm`, sin activar las operaciones de cola de almacenamiento y actualización del búfer, y sin generar solicitudes de acceso a memoria reales. El dcache no estará al tanto de La instrucción atómica.
 
-## 调试相关
+## Relacionado con la depuración
 
-原子指令的 trigger 仅支持使用 vaddr 触发.
+El disparador de instrucciones atómicas solo admite el uso del disparador vaddr.
