@@ -1,38 +1,38 @@
-# Writeback Queue
+# Cola de escritura diferida
 
-NanHu 架构的 DCache 中用到 18 项的写回队列, 负责通过 TL-C 的 C 通道向 L2 Cache 释放替换块 (Release), 或者对 Probe 请求做出应答 (ProbeAck), 且支持 Release 和 ProbeAck 之间相互合并以减少请求数目并优化时序.
+El DCache de la arquitectura NanHu utiliza una cola de escritura diferida de 18 elementos, que es responsable de liberar bloques de reemplazo (Release) a la caché L2 a través del canal C del TL-C, o responder a solicitudes de sonda (ProbeAck), y Admite la comunicación entre Release y ProbeAck. Se fusionan entre sí para reducir la cantidad de solicitudes y optimizar los tiempos.
 
-## Writeback Queue 入队
+## Entrada de cola de escritura diferida
 
-为了时序考虑, 在 wbq 满的时候无论新请求是否能被合并都会被拒绝; 而当 wbq 不满的时候所有请求都会被接收, 此时或者为新请求分配空项, 或者将新请求合并到已有的 Writeback Entry 中, 后面在[状态维护](#writeback-queue-状态维护)部分将会看到 Writeback Entry 任何时候都可以合并进新的 Release 或 ProbeAck 请求. 因此 NanHu 架构中判断写回队列能否入队只需要看队列有没有空项即可, 大大缩短了入队的逻辑延迟.
+Por razones de tiempo, cuando wbq está lleno, se rechazarán las nuevas solicitudes independientemente de si se pueden fusionar; cuando wbq no está lleno, se aceptarán todas las solicitudes y se asignará un elemento vacío para la nueva solicitud o la nueva solicitud se fusionará con un elemento existente. En la entrada de escritura diferida, verá en la sección [Mantenimiento de estado](#writeback-queue-State Maintenance) que la entrada de escritura diferida se puede fusionar con una nueva solicitud de versión o ProbeAck en cualquier momento. Por lo tanto, la arquitectura NanHu determina si la cola de escritura diferida se puede unir. Para unirse a una cola, solo necesita ver si hay elementos vacíos en la cola, lo que acorta en gran medida el retraso lógico de unirse a la cola.
 
-## Writeback Queue 状态维护
+## Mantenimiento del estado de la cola de escritura diferida
 
-每一项 Writeback Entry 有如下 4 种状态:
+Cada entrada de escritura diferida tiene los 4 estados siguientes:
 
-状态|说明
+Estado|Descripción
 -|-
-`s_invalid`|该 Writeback Entry 为空项
-`s_sleep`|准备发送 Release 请求, 但暂时 sleep 并等待 refill 请求唤醒
-`s_release_req`|正在发送 Release 或者 ProbeAck 请求
-`s_release_resp`|等待 ReleaseAck 请求
+`s_invalid`|La entrada de escritura diferida es una entrada vacía
+`s_sleep`|Prepárese para enviar una solicitud de liberación, pero duerma temporalmente y espere una solicitud de recarga para despertar
+`s_release_req` | ​​Envío de una solicitud de Release o ProbeAck
+`s_release_resp`|Esperando la solicitud ReleaseAck
 
-!!! info
-    **关于 `s_sleep` 状态的说明**: 为了性能考虑, 我们不希望替换块被过早地无效掉, 以免在向下访问 L2 / L3 的时间里核内又访问了替换块, 导致乒乓效应, 产生新的不必要的 miss 请求. 因此, 替换请求先后进入 Main Pipe 和 Writeback Queue 并不是真的要把替换块无效掉, 而是先把替换块的数据读出来, 并暂时放在写回队列中 sleep. 在替换请求 sleep 期间, 其他请求还是可以正常访问 DCache 中的替换块, 只要把对替换块的写同步一份到写回队列中即可. 当回填块拿上来以后, 就可以唤醒写回队列里 sleep 的块了, 写回队列开始向下 Release 替换块, 同时 Miss Queue 请求 Refill Pipe 完成回填, 回填的同时替换块就会被覆盖掉了.
+!!! información
+ **Nota sobre el estado `s_sleep`**: Por razones de rendimiento, no queremos que el bloque de reemplazo se invalide demasiado pronto, para evitar que el núcleo acceda nuevamente al bloque de reemplazo durante el tiempo de acceso a L2 / L3 hacia abajo. lo que genera un efecto ping-pong, generando nuevas solicitudes de falla innecesarias. Por lo tanto, la solicitud de reemplazo ingresa a la tubería principal y a la cola de escritura de forma sucesiva, no para invalidar realmente el bloque de reemplazo, sino para leer primero los datos del bloque de reemplazo y poner temporalmente en la cola de reescritura. Durante el período de suspensión de la solicitud de reemplazo, otras solicitudes aún pueden acceder al bloque de reemplazo en DCache normalmente, siempre que la escritura del bloque de reemplazo esté sincronizada con la cola de reescritura. Cuando se completa el reabastecimiento Cuando se toma un bloque, se puede reactivar la escritura. Se devuelve el bloque inactivo de la cola de escritura y la cola de escritura comienza a liberar el bloque de reemplazo hacia abajo. Al mismo tiempo, la cola de faltas solicita a la tubería de recarga que complete el relleno. El bloque de reemplazo se sobrescribirá durante el relleno.
 
-不考虑请求合并的话, Writeback Entry 处理 ProbeAck 和处理 Release 的流程如下:
+Sin considerar la fusión de solicitudes, el proceso de procesamiento de entrada de escritura inversa ProbeAck y Release es el siguiente:
 
 1. ProbeAck: `s_invalid` -> `s_release_req` -> `s_invalid`
 
-2. Release: `s_invalid` -> `s_sleep` -> `s_release_req` -> `s_release_resp` -> `s_invalid`
+2. Liberación: `s_invalid` -> `s_sleep` -> `s_release_req` -> `s_release_resp` -> `s_invalid`
 
-如果有可以合并的请求, 其处理流程会稍复杂一些:
+Si hay solicitudes que se pueden fusionar, el proceso es un poco más complicado:
 
-3. Release 合并 ProbeAck: 在上述 Release 处理流程中任何一个阶段都有可能收到相同地址的 ProbeAck: 如果是在 `s_sleep` 阶段则直接将 Release 请求变为 ProbeAck 请求; 如果是在 `s_release_req` 阶段, 且 Release 请求还没有完成握手, 也可以直接将 Release
-变为 ProbeAck; 如果是在 `s_release_req` 阶段, 但是 Release 请求已经完成了至少一次握手, 那么说明 ProbeAck 请求来得太晚, 这时会置上 `release_later` 位, 并把 ProbeAck 相关信息记录下来, 在 Release 全部处理完后再处理 ProbeAck.
+3. Fusión de ProbeAck de Release: En cualquier etapa del flujo de procesamiento de Release anterior, es posible recibir ProbeAck de la misma dirección: si está en la etapa `s_sleep`, la solicitud de Release se convierte directamente en una solicitud ProbeAck; si está en la etapa `s_sleep`, la solicitud de Release se convierte directamente en una solicitud ProbeAck; está en la etapa `s_release_req`, si la solicitud de lanzamiento no ha completado el protocolo de enlace, también puede enviar directamente el lanzamiento
+Si la solicitud de liberación ha completado al menos un protocolo de enlace en la fase `s_release_req`, entonces la solicitud ProbeAck es demasiado tarde. En este caso, se establece el bit `release_later` y se registra la información relacionada con ProbeAck. Una vez que se completa todo el procesamiento, ProbeAck está procesado.
 
-4. ProbeAck 合并 Release: 由于这部分内容非常细碎, 就不做更详细的介绍了, 具体内容可以参考 `src/main/scala/xiangshan/cache/dcache/mainpipe/WritebackQueue.scala` 的代码. 主要的思想就是能合并就合并, 尽量少做一次 Release, 如果 Release 来得太晚就置 `release_later` 位稍后再做处理.
+4. Versión de fusión de ProbeAck: dado que esta parte es muy detallada, no la explicaré con más detalle. Para obtener contenido específico, consulte el código de `src/main/scala/xiangshan/cache/dcache/mainpipe/WritebackQueue.scala `. La idea principal es fusionar siempre que sea posible, hacer la menor cantidad de lanzamientos posible y, si un lanzamiento llega demasiado tarde, configurar el bit `release_later` para procesarlo más tarde.
 
-## 阻塞 Miss Queue 请求
+## Bloquear solicitudes de cola perdida
 
-TileLink 手册对并发事务的限制要求如果 master 有 pending Grant (即还没有发送 GrantAck), 则不能发送相同地址的 Release. 因此所有 miss 请求在进入 Miss Queue 时如果发现和 Writeback Queue 中某一项有相同地址, 则该 miss 请求会被阻塞.
+Las restricciones del manual de TileLink sobre transacciones concurrentes requieren que si el maestro tiene una concesión pendiente (es decir, aún no ha enviado un GrantAck), no puede enviar una liberación con la misma dirección. Por lo tanto, todas las solicitudes de falta se enviarán a la cola de faltas Si encuentran que la dirección es la misma que la de un elemento en la cola de escritura diferida, entonces se bloqueará la solicitud faltante.
