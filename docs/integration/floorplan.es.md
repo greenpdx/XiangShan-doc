@@ -1,15 +1,15 @@
-# Reference Floorplan
+# Plano de referencia
 
-This section presents the floorplan of NANHU. The floorplan is for reference only, and we don't guarantee its effectiveness on any process node.
+Esta sección presenta el plano de referencia de NANHU. El plano es solo de referencia y no garantizamos su efectividad en ningún nodo de proceso.
 
-## Dual-Core NANHU
+## NANHU de doble núcleo
 
-Below shows the reference floorplan for NANHU. It is configured with dual cores with 1MB L2 cache for each of them. The L3 cache is 6MB. Different colors represent various submodules in XSCore, as listed in the second figure.
+A continuación se muestra el plano de referencia de NANHU. Está configurado con núcleos duales con 1 MB de caché L2 para cada uno de ellos. La caché L3 es de 6 MB. Los diferentes colores representan varios submódulos en XSCore, como se indica en la segunda figura.
 
 ![floorplan.png](../figs/integration/floorplan.png)
 
-Figure: a reference floorplan for dual-core NANHU
+Figura: plano de referencia para NANHU de doble núcleo
 
 ![floorplan_notes.png](../figs/integration/floorplan_notes.png)
 
-Figure: coloring of the floorplan
+Figura: coloración del plano
