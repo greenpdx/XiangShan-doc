@@ -1,0 +1,7 @@
+#!/bin/bash
+
+lst=`ls *.md`
+for f in $lst; do
+	echo "$f"
+	git mv "$f" "${f//.md/.en.md}";
+done
