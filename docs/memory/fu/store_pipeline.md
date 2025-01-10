@@ -1,52 +1,52 @@
-# Store Pipeline
+# Tubería de almacenamiento
 
-本章介绍香山处理器(南湖架构) store addr / store data 流水线的设计以及 store 指令的处理流程.
+Este capítulo presenta el diseño de la tubería de dirección de almacenamiento/datos de almacenamiento del procesador Xiangshan (arquitectura Nanhu) y el flujo de procesamiento de la instrucción de almacenamiento.
 
-香山处理器(南湖架构)采用了 store 地址与数据分离的执行方式. store 的地址与数据在就绪时可以分别从保留站中被发出, 进入后续的处理流程. 同一条 store 指令对应的数据/地址两个操作靠相同的 robIdx / sqIdx 联系在一起.
+El procesador Xiangshan (arquitectura Nanhu) utiliza un modo de ejecución independiente para la dirección de almacenamiento y los datos. La dirección de almacenamiento y los datos se pueden enviar desde la estación de reserva cuando estén listos e ingresar al flujo de procesamiento posterior. Los datos/direcciones correspondientes a la misma instrucción de almacenamiento Las dos operaciones están vinculadas entre sí por el mismo robIdx / sqIdx.
 
-香山处理器(南湖架构)包含两条 store addr (sta) 流水线, 每条 store addr 流水线分成4个流水级. 前两个流水级负责将 store 的控制信息和地址传递给 store queue, 后两个流水级负责等待访存依赖检查完成. 
+El procesador Xiangshan (arquitectura Nanhu) contiene dos canales de direcciones de almacenamiento (sta). Cada canal de direcciones de almacenamiento se divide en cuatro etapas de canalización. Las dos primeras etapas de canalización son responsables de pasar la información de control de almacenamiento y la dirección a la cola de almacenamiento, y la última etapa de canalización es responsable de enviar la información de control de almacenamiento y la dirección a la cola de almacenamiento. Dos etapas de la canalización son responsables de pasar la información de control de la tienda y la dirección a la cola de la tienda. El nivel es responsable de esperar a que se complete la comprobación de dependencia del acceso a la memoria.
 
-香山处理器(南湖架构)包含两条 store data (std) 流水线, 在保留站提供 store data 后, store data 流水线会立刻将 data 写入 store queue 的对应项中. 
+El procesador Xiangshan (arquitectura Nanhu) contiene dos canales de datos de la tienda (estándar). Una vez que la estación de reserva proporciona los datos de la tienda, el canal de datos de la tienda los escribe inmediatamente en el elemento correspondiente de la cola de la tienda.
 
-## Sta Pipeline
+## Tubería Sta
 
-各级流水线的划分如下:
+La división de cada nivel del pipeline es la siguiente:
 
-![storepipe](../../figs/memblock/store-pipeline.png)  
+![tubería de almacenamiento](../../figs/memblock/tubería-de-almacenamiento.png)
 
-Stage 0
+Etapa 0
 
-* 计算虚拟地址
-* 虚拟地址送入 TLB
+* Calcular dirección virtual
+* La dirección virtual se envía a TLB
 
-Stage 1
+Etapa 1
 
-* TLB 产生物理地址
-* 完成快速异常检查
-* 开始进行访存依赖检查 
-* 物理地址送入 store queue
+* TLB genera dirección física
+* Complete una comprobación rápida de anomalías
+* Iniciar la comprobación de dependencia del acceso a la memoria
+*La dirección física se envía a la cola de la tienda.
 
-Stage 2
+Etapa 2
 
-* 访存依赖检查
-* 完成全部异常检查和PMA查询, 根据结果更新 store queue
+* Comprobación de dependencia de acceso a memoria
+* Complete todas las comprobaciones de excepciones y consultas de PMA, y actualice la cola de la tienda en función de los resultados.
 
-Stage 3
+Etapa 3
 
-* 完成访存依赖检查 
-* 通知 ROB 可以提交指令
+* Comprobación completa de la dependencia de acceso a la memoria
+* Notificar a ROB que puede enviar instrucciones
 
-[Store Queue](../lsq/store_queue.md) 一章描述了 sta 更新 store queue 的详细情况.
+El capítulo [Cola de almacenamiento](../lsq/store_queue.md) describe los detalles del proceso de actualización de la cola de almacenamiento.
 
-## Std Pipeline
+## Tubería estándar
 
-Stage 0
+Etapa 0
 
-* 保留站给出 store data
-* 将 store data 写入 store queue
+* La estación reservada proporciona datos de la tienda.
+* Escribe datos de la tienda en la cola de tiendas
 
-## Store 的执行细节补充
+## Detalles adicionales sobre la implementación de la tienda
 
-**TLB miss 的处理.** 和 load 流水线一样, store addr 流水线也可能经历 TLB miss. 两者的处理方式基本一致, 参见 [load TLB miss 的处理]( ./load_pipeline.md#tlb-miss). store addr 仅使用一个 rsFeedback 端口向保留站反馈 store addr 计算操作是否需要从保留站重发.
+**Manejo de errores de TLB.** Al igual que el pipeline de carga, el pipeline de direcciones de almacenamiento también puede experimentar errores de TLB. El manejo de ambos pipelines es básicamente el mismo, consulte [Manejo de errores de TLB de carga](./load_pipeline.md#tlb -miss) . store addr utiliza solo un puerto rsFeedback para proporcionar retroalimentación a la estación de reserva si la operación de cálculo de store addr necesita ser reenviada desde la estación de reserva.
 
-**PMA 和异常检查.** 为时序考虑, MMIO 等检查结果在 data 更新到 store queue 一周期之后才全部完成. 此时 store 流水线会将查询出的最终结果写入到 store queue 中.
+**PMA y verificación de excepciones.** Por cuestiones de tiempo, MMIO y otros resultados de verificación no se completan hasta que los datos se actualizan en la cola de almacenamiento durante un ciclo. En este momento, la canalización de almacenamiento escribirá el resultado final de la consulta en la cola de la tienda.
