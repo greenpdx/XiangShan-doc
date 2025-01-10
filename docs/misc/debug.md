@@ -1,18 +1,18 @@
-使用GDB调试香山
+Uso de GDB para depurar Xiangshan
 ===================
 
-我们在香山内接入了 Rocket Chip 的 Debug Module ，使其支持 0.13 版本 [RISCV Debug 手册](https://riscv.org/wp-content/uploads/2019/03/riscv-debug-release.pdf)中的调试模式（Debug Mode）。
+Hemos conectado el módulo de depuración de Rocket Chip a Xiangshan para admitir la versión 0.13 [Manual de depuración de RISCV](https://riscv.org/wp-content/uploads/2019/03/riscv-debug-release.pdf) Modo de depuración en .
 
-## 原理
+## Principio
 
-Debug Module 可以通过中断的方法使得处理器核进入调试模式，随后GDB可以使处理器核执行任意指令和读取任意寄存器。在 Debug Module 发出中断后，处理器核会陷入到 Debug Module 的 MMIO 地址空间并开始循环。Debug Module 通过在这片地址空间中写入指令来控制核的行为并读取核的寄存器。
+El módulo de depuración puede poner el núcleo del procesador en modo de depuración a través de un método de interrupción, y luego GDB puede hacer que el núcleo del procesador ejecute cualquier instrucción y lea cualquier registro. Después de que el módulo de depuración emite una interrupción, el núcleo del procesador caerá en el espacio de direcciones MMIO del módulo de depuración y comenzará un bucle. El módulo de depuración controla el comportamiento del núcleo y lee los registros del núcleo escribiendo instrucciones en este espacio de direcciones.
 
-Debug Module 也支持 System Bus Access 功能，即不通过处理器核来读写物理内存。香山的 Debug Module 通过 TileLink 接入了 L3 缓存，以便于数据一致性的维护。请注意，要在仿真时使用该功能，请使用 Default Config。
+El módulo de depuración también admite la función de acceso al bus del sistema, lo que significa leer y escribir memoria física sin pasar por el núcleo del procesador. El módulo de depuración de Xiangshan está conectado a la caché L3 a través de TileLink para facilitar el mantenimiento de la consistencia de los datos. Tenga en cuenta que para utilizar esta función en la simulación, utilice la configuración predeterminada.
 
-## 软件与配置
-通过 GDB 调试香山需要安装 `riscv64-unknown-elf-gdb` 与 `openocd`。安装方式请参考相应的 Github 项目（直接按照README安装即可，无需额外配置）：[GDB](https://github.com/riscv-collab/riscv-binutils-gdb)， [OpenOCD](https://github.com/riscv/riscv-openocd)
+## Software y configuración
+Para depurar Xiangshan con GDB, necesita instalar `riscv64-unknown-elf-gdb` y `openocd`. Para obtener instrucciones de instalación, consulte los proyectos de Github correspondientes (siga directamente el README para instalar, no se requiere configuración adicional): [GDB](https://github.com/riscv-collab/riscv-binutils-gdb), [ OpenOCD](https://github.com/riscv/riscv-openocd)
 
-OpenOCD 需要配置文件，可使用下面的配置：
+OpenOCD requiere un archivo de configuración, puedes utilizar la siguiente configuración:
 ```
 adapter speed 10000
 
@@ -33,8 +33,7 @@ init
 halt
 echo "Ready for Remote Connections"
 ```
+## Conéctese a Xiangshan mediante GDB
+Después de compilar emu, agregue los dos indicadores `--enable-jtag --no-diff` al ejecutar, y ejecute `openocd -f config.cfg` en otra terminal, donde `config.cfg` es el archivo de configuración de OpenOCD, y ejecute `riscv64-unknown-elf-gdb` en la tercera terminal. Se recomienda utilizar la pantalla dividida tmux para la operación.
 
-## 用 GDB 连接香山
-编译得到 emu 后，运行时加入 `--enable-jtag --no-diff` 两个flag ，同时在另一个终端里执行 `openocd -f config.cfg` ，其中 `config.cfg` 为 OpenOCD 配置文件，同时在第三个终端里执行 `riscv64-unknown-elf-gdb`。推荐使用 tmux 分屏进行操作。
-
-在 GDB 的命令行中执行 `target extended-remote localhost:3333` ，稍等即可连接到香山仿真程序。
+Ejecute `target extended-remote localhost:3333` en la línea de comando GDB y espere un momento para conectarse al emulador Xiangshan.
