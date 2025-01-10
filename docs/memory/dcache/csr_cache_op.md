@@ -1,47 +1,47 @@
-# 自定义一级缓存操作
+# Personalizar las operaciones de caché de primer nivel
 
-南湖架构支持基于 CSR 的自定义 l1 cache 操作. 
+La arquitectura de Southlake admite operaciones de caché L1 personalizadas basadas en CSR.
 
-## L1 Cache 指令寄存器
+## Registro de instrucciones de caché L1
 
-cache 指令寄存器分成3类: 一个 `CSR_CACHE_OP` 缓存指令寄存器, 一个 `CSR_OP_FINISH` 缓存指令状态寄存器, `CSR_CACHE_*`: 一级缓存控制寄存器, 自定义缓存指令的参数配置和结果返回都经由这些寄存器进行. 寄存器的基地址由 `Sfetchctl` 指定,  默认为 `Sfetchctl`. 详细寄存器列表按顺序如下:
+Los registros de instrucciones de caché se dividen en tres categorías: un registro de instrucciones de caché `CSR_CACHE_OP`, un registro de estado de instrucciones de caché `CSR_OP_FINISH` y `CSR_CACHE_*`: registros de control de caché de primer nivel. La configuración de parámetros de instrucciones de caché personalizadas y la devolución de resultados son todos Se realiza a través de estos registros. La dirección base del registro se especifica mediante `Sfetchctl`, y el valor predeterminado es `Sfetchctl`. La lista detallada de registros es la siguiente en orden:
 
-寄存器名称|说明
+Nombre del registro | Descripción
 -|-
-CSR_CACHE_OP|cache op 指令码. 写入该寄存器会触发自定义 L1 cache 指令的执行
-CSR_OP_FINISH|L1 cache 指令完成标志位
-CACHE_LEVEL|缓存指令目标选择. 0: ICache, 1: DCache
-CACHE_WAY|cache way select
-CACHE_IDX|cache index select
-CACHE_BANK_NUM|cache bank select
-CACHE_TAG_ECC|tag ecc
-reserved|reserved
-CACHE_TAG_LOW|tag data
-CACHE_TAG_HIGH|reserved
-reserved|reserved
-CACHE_DATA_ECC|data ecc
-CACHE_DATA_X|data [64(X+1)-1:64(X)]
+CSR_CACHE_OP|código de instrucción de operación de caché. Escribir en este registro activa la ejecución de instrucciones de caché L1 personalizadas.
+CSR_OP_FINISH|Bandera de finalización de instrucción de caché L1
+CACHE_LEVEL|Selección de destino de instrucción de caché. 0: ICache, 1: DCache
+CACHE_WAY|selección de ruta de caché
+CACHE_IDX|selección de índice de caché
+CACHE_BANK_NUM|selección de banco de caché
+CACHE_TAG_ECC|etiqueta ecc
+reservado|reservado
+CACHE_TAG_LOW|datos de etiqueta
+CACHE_TAG_HIGH|reservado
+reservado|reservado
+CACHE_DATA_ECC|datos ecc
+DATOS_CACHE_X|datos [64(X+1)-1:64(X)]
 
-<!-- TODO: 精简编码空间 -->
+<!-- TODO: Reducir el espacio de codificación -->
 
-## cache 指令码
+## código de instrucción de caché
 
-自定义L1缓存指令支持的操作码如下:
+Los códigos de operación admitidos por las instrucciones de caché L1 personalizadas son los siguientes:
 
-操作|操作码
+Operación|Código de operación
 -|-
-READ_TAG_ECC|0
-READ_DATA_ECC|1
-READ_TAG|2
-READ_DATA|3
-WRITE_TAG_ECC|4
-WRITE_DATA_ECC|5
-WRITE_TAG|6
-WRITE_DATA|7
-<!-- COP_FLUSH_BLOCK|8 -->
-## 自定义 L1 cache 指令基本执行流程
+LEER_ETIQUETA_ECC|0
+LEER_DATOS_ECC|1
+LEER_ETIQUETA|2
+LEER_DATOS|3
+ESCRIBIR_ETIQUETA_ECC|4
+ESCRIBIR_DATOS_ECC|5
+ESCRIBIR_ETIQUETA|6
+ESCRIBIR DATOS | 7
+<!-- BLOQUE DE DESCARGA DE COP|8 -->
+## Personalizar el flujo de ejecución básico de las instrucciones de caché L1
 
-1. 使用 CSR 指令写入 cache 指令寄存器中的参数配置寄存器, 清空 OP_FINISH 寄存器
-1. 向 CSR_CACHE_OP 寄存器写入指令码
-1. (可选) 轮询  CSR_OP_FINISH, 直到指令完成, CSR_OP_FINISH == 1
-1. 使用 CSR 指令读取 cache 指令寄存器中的结果寄存器, 获得 cache 指令结果
+1. Utilice la instrucción CSR para escribir el registro de configuración de parámetros en el registro de instrucciones de caché y borrar el registro OP_FINISH.
+1. Escriba el código de instrucción en el registro CSR_CACHE_OP
+1. (Opcional) Sondee CSR_OP_FINISH hasta que se complete el comando, CSR_OP_FINISH == 1
+1. Utilice la instrucción CSR para leer el registro de resultados en el registro de instrucciones de caché para obtener el resultado de la instrucción de caché.
