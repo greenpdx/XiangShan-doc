@@ -1,32 +1,32 @@
-# Load Pipeline
+# Tubo de carga
 
-本章描述香山处理器 DCache Load 流水线的实现.
+Este artículo describe la implementación de la canalización de DCache en Xiangshan.
 
-DCache 的 load 流水线与 load unit 的 load 流水线各流水级一一对应, 同步流动. 两者在逻辑上可以被视为同一条流水线. DCache 的 load 流水线是**非阻塞**的. 一旦 dcache 流水线 stage 0 接收了一条 load 指令, 这条 load 指令就不会被阻塞. 不过在出现冲突的情况下, dcache 流水线 stage 0 可能会拒绝接收 load 指令.
+El automóvil DCache también está vinculado a una construcción de tubos de automóviles unificada y una función de control total. Los expertos también consideraron la diversificación de la construcción de automóviles. El automóvil DCache es **recto**. Puede ver la tina DCache 0 El gobierno también ha Lanzó una nueva operación militar autónoma que dejó a la ciudad con una red completa y sin interrupciones. Durante el embargo, durante el conflicto, los bancos del canal 0 también perdieron temporalmente el control de la situación durante la recuperación del incendio de la ciudad.
 
-## DCache Load 流水线的划分
+## División del canal DCache
 
-### Stage 0
+### Etapa 0
 
-* 接收 load 流水线计算出的虚拟地址
-* 使用虚拟地址查询 tag
-* 使用虚拟地址查询 meta
+*Recuperar la tubería de gas virtual
+* Utilice un diccionario virtual para consultar la etiqueta
+* Utilizar un director virtual para la metaconsulta
 
-### Stage 1
+Etapa 1
 
-* 获得 tag 查询结果
-* 获得 meta 查询结果
-* 进行 tag 匹配
-    * 判断 dcache 访问是否命中
-* 检查 tag error
-* 使用物理地址查询 data
-* 获取 PLRU 信息, 选出替换 way
-* 检查 bank 冲突
-* 生成快速唤醒信号
+* Obtener los resultados de estas consultas
+* Obtener resultados de metaconsultas
+* Realizar la correspondencia de la etiqueta.
+ * Determinar el acceso y el valor correcto del caché sea
+*Verificar el error
+* Utilice la directiva funcional para consultar sus datos
+* Proporcionar información sobre la PLRU y seleccionar un formulario de revisión formal
+* Verificar las zonas de conflicto
+* Generar activación rápida
 
-### Stage 2
+Etapa 2
 
-* 更新 dcache PLRU
-* 获得 data 查询结果
-* 如果 miss, 尝试分配 MSHR (miss queue) 项
-* 检查 data error
+* Actualizar dcache PLRU
+* Obtener los resultados de la consulta
+* Para este propósito, también tuve el conocimiento del elemento firme de MSHR (columna oftálmica)
+* Error en la comparación de tarifas
