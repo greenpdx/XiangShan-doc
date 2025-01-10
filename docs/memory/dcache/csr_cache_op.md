@@ -1,16 +1,16 @@
-# 自定义一级缓存操作
+# Custom L1 cache operation
 
-南湖架构支持基于 CSR 的自定义 l1 cache 操作. 
+Nanhu architecture supports custom L1 cache operation based on CSR.
 
-## L1 Cache 指令寄存器
+## L1 Cache instruction register
 
-cache 指令寄存器分成3类: 一个 `CSR_CACHE_OP` 缓存指令寄存器, 一个 `CSR_OP_FINISH` 缓存指令状态寄存器, `CSR_CACHE_*`: 一级缓存控制寄存器, 自定义缓存指令的参数配置和结果返回都经由这些寄存器进行. 寄存器的基地址由 `Sfetchctl` 指定,  默认为 `Sfetchctl`. 详细寄存器列表按顺序如下:
+The cache instruction register is divided into 3 categories: a `CSR_CACHE_OP` cache instruction register, a `CSR_OP_FINISH` cache instruction status register, `CSR_CACHE_*`: L1 cache control register, the parameter configuration and result return of custom cache instructions are all performed through these registers. The base address of the register is specified by `Sfetchctl`, which defaults to `Sfetchctl`. The detailed register list is as follows in order:
 
-寄存器名称|说明
+Register name|Description
 -|-
-CSR_CACHE_OP|cache op 指令码. 写入该寄存器会触发自定义 L1 cache 指令的执行
-CSR_OP_FINISH|L1 cache 指令完成标志位
-CACHE_LEVEL|缓存指令目标选择. 0: ICache, 1: DCache
+CSR_CACHE_OP|cache op instruction code. Writing to this register will trigger the execution of custom L1 cache instructions
+CSR_OP_FINISH|L1 cache instruction completion flag
+CACHE_LEVEL|cache instruction target selection. 0: ICache, 1: DCache
 CACHE_WAY|cache way select
 CACHE_IDX|cache index select
 CACHE_BANK_NUM|cache bank select
@@ -22,13 +22,13 @@ reserved|reserved
 CACHE_DATA_ECC|data ecc
 CACHE_DATA_X|data [64(X+1)-1:64(X)]
 
-<!-- TODO: 精简编码空间 -->
+<!-- TODO: Streamline the encoding space -->
 
-## cache 指令码
+## cache instruction code
 
-自定义L1缓存指令支持的操作码如下:
+The opcodes supported by custom L1 cache instructions are as follows:
 
-操作|操作码
+Operation|Opcode
 -|-
 READ_TAG_ECC|0
 READ_DATA_ECC|1
@@ -39,9 +39,9 @@ WRITE_DATA_ECC|5
 WRITE_TAG|6
 WRITE_DATA|7
 <!-- COP_FLUSH_BLOCK|8 -->
-## 自定义 L1 cache 指令基本执行流程
+## Custom L1 cache instruction basic execution flow
 
-1. 使用 CSR 指令写入 cache 指令寄存器中的参数配置寄存器, 清空 OP_FINISH 寄存器
-1. 向 CSR_CACHE_OP 寄存器写入指令码
-1. (可选) 轮询  CSR_OP_FINISH, 直到指令完成, CSR_OP_FINISH == 1
-1. 使用 CSR 指令读取 cache 指令寄存器中的结果寄存器, 获得 cache 指令结果
+1. Use CSR instruction to write the parameter configuration register in the cache instruction register and clear the OP_FINISH register
+1. Write the instruction code to the CSR_CACHE_OP register
+1. (Optional) Poll CSR_OP_FINISH until the instruction is completed and CSR_OP_FINISH == 1
+1. Use CSR instruction to read the result register in the cache instruction register to obtain the cache instruction result
