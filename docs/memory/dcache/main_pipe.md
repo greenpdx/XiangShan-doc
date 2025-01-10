@@ -1,64 +1,64 @@
-# Main Pipeline
+# Tubería principal
 
-NanHu 架构使用 Main Pipeline (dcache 主流水线) 处理 store, probe, 原子指令和替换操作. Main Pipeline 负责所有需要争用 writeback queue 向下层 cache 发起请求/写回数据的指令的执行.
+La arquitectura NanHu utiliza la canalización principal (canalización principal de dcache) para gestionar el almacenamiento, la prueba, las instrucciones atómicas y las operaciones de reemplazo. La canalización principal es responsable de la ejecución de todas las instrucciones que deben competir por la cola de reescritura para iniciar solicitudes/reescrituras. datos a la caché de nivel inferior.
 
-!!! info
-    相比上一代雁栖湖架构, 南湖架构将 refill 操作从 Main Pipeline 中独立成单独的流水线. 其他的操作并没有从 Main Pipeline 中剥离, 原因是处理多条流水线间冲突/资源争用的成本超过了拆分流水线的性能收益.
+!!! información
+ En comparación con la arquitectura de Yanqi Lake de la generación anterior, la arquitectura de Nanhu separa la operación de recarga de la tubería principal en una tubería separada. Otras operaciones no están separadas de la tubería principal porque el costo de lidiar con conflictos/contención de recursos entre múltiples tuberías excede los beneficios de rendimiento. de división de tuberías.
 
-## MainPipe 各级流水线的功能
+## Funciones de MainPipe en cada nivel del pipeline
 
-### Stage 0
+### Etapa 0
 
-* 仲裁传入的 Main Pipeline 请求选出优先级最高者
-* 根据请求信息判断请求所需的资源是否就位
-* 发出 tag, meta 读请求
+* Arbitrar las solicitudes entrantes de la tubería principal y seleccionar la que tenga la mayor prioridad
+* Determinar si los recursos necesarios para la solicitud están disponibles en función de la información de la solicitud.
+* Etiqueta de problema, solicitud de lectura meta
 
-### Stage 1
+Etapa 1
 
-* 获得 tag, meta 读请求的结果
-* 进行 tag 匹配检查, 判断是否命中
-* 如果需要替换, 获得 PLRU 提供的替换选择结果
-* 根据读出的 meta 进行权限检查
-* 提前判断是否需要执行 miss queue 访问
+* Obtener el resultado de la solicitud de lectura de etiquetas y metadatos
+* Realizar una comprobación de coincidencia de etiquetas para determinar si es un éxito
+* Si se requiere reemplazo, obtenga el resultado de selección de reemplazo proporcionado por PLRU
+* Realizar una verificación de permisos en función de los metadatos de lectura.
+* Determinar de antemano si se requiere acceso a la cola de espera
 
-### Stage 2
+Etapa 2
 
-* 获得读 data 的结果, 与要写入的数据拼合
-* 如果 miss, 尝试将这次请求信息写入 miss queue
+* Obtener el resultado de la lectura de datos y combinarlo con los datos que se van a escribir.
+* Si falla, intente escribir esta información de solicitud en la cola de fallas
 
-<!-- miss queue 的写入时序很紧张, 这一流水级让写入 miss queue 尽早开始来减轻其对时序的影响-->
+<!-- El tiempo de escritura de la cola de fallas es muy ajustado, esta canalización permite que la escritura de la cola de fallas comience lo antes posible para reducir su impacto en el tiempo-->
 
-### Stage 3
+Etapa 3
 
-* 根据操作的结果, 更新 meta, data, tag
-* 如果指令需要向下层 cache 发起访问/写回数据, 则在这一级生成 writeback queue 访问请求, 并尝试写 writeback queue
-* 在 release 操作生效并更新 meta 时, 在这一级向 load queue 给出 release 信号来进行违例判断
-* 对于原子指令的特殊支持
-    * AMO 指令在这一级停留两拍, 先在这一流水级完成 AMO 指令的运算操作, 再将结果写回到 dcache
-    * LR/SC 指令会在这里设置/检查其 reservation set
-    queue
+* Actualizar meta, datos, etiquetas según el resultado de la operación.
+* Si la instrucción necesita acceder o escribir datos en el nivel de caché inferior, se genera una solicitud de acceso a la cola de escritura diferida en este nivel y se intenta escribir en la cola de escritura diferida.
+* Cuando la operación de liberación surte efecto y actualiza los metadatos, se envía una señal de liberación a la cola de carga en este nivel para determinar la violación.
+* Soporte especial para instrucciones atómicas
+ * La instrucción AMO permanece en esta etapa durante dos tiempos, primero completando la operación de la instrucción AMO en esta etapa de la cadena de bloques y luego escribiendo el resultado nuevamente en el caché de datos.
+ * Los comandos LR/SC establecerán/verificarán su conjunto de reservas aquí
+ cola
 
-<!-- ## 指令执行流程 -->
+<!-- ## Flujo de ejecución de instrucciones -->
 
 <!-- !!! todo -->
-<!-- 分不同种类的请求(store/probe/replace/atom)说明指令在 mainpipe 中的执行流程 -->
+<!-- Los diferentes tipos de solicitudes (almacenar/probar/reemplazar/atomizar) explican el flujo de ejecución de instrucciones en mainpipe -->
 
-## MainPipe 争用和阻塞
+## Contención y bloqueo de MainPipe
 
-Main Pipeline 的争用存在以下优先级:
+La contención del Oleoducto Principal tiene las siguientes prioridades:
 
-1. probe_req
-1. replace_req
-1. store_req
-1. atomic_req
+1. solicitud de sonda
+1. reemplazar_req
+1. tienda_req
+1. requerimiento atómico
 
-一个请求只有在其所请求的资源全部就绪, 不存在 *set 冲突*, 且没有比它优先级更高的请求的情况下才会被接受. 来自 committed store buffer 的写请求由于时序原因, 拥有单独的检查逻辑.
+Una solicitud se acepta solo si todos los recursos que solicita están listos, no hay ningún *conflicto de conjunto* y no hay ninguna solicitud con una prioridad mayor que la suya. Las solicitudes de escritura desde los buffers de almacenamiento comprometidos tienen una lógica de verificación independiente.
 
-<!-- ### set 冲突回避 -->
+<!-- ### establecer prevención de conflictos -->
 
-<!-- *set 冲突* TODO -->
+<!-- *establecer conflicto* TODO -->
 
 
-<!-- ## MainPipe 中的错误处理 -->
+<!-- ## Manejo de errores en MainPipe -->
 
 <!-- !!! todo -->
