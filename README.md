@@ -13,9 +13,6 @@ Este es el repositorio de documentos oficial de Xiangshan.
 
 Lista de correo: xiangshan-all AT ict DOT ac DOT cn
 
-Lista de correo: xiangshan-all AT ict DOT ac DOT cn
-
-
 
 ## Síganos
 
