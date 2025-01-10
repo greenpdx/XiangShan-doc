@@ -1,26 +1,26 @@
-# Probe Queue
+# Cola de sonda
 
-Probe Queue 包含 16 项 Probe Entry, 负责接收来自 L2 Cache 的 Probe 请求, 并将 Probe 请求转成内部信号发送到 Main Pipe, 在 Main Pipe 中修改被 Probe 块的权限.
+La cola de sonda contiene 16 entradas de sonda, que son responsables de recibir solicitudes de sonda de la caché L2, convertir las solicitudes de sonda en señales internas y enviarlas a la tubería principal, donde se modifican los permisos de los bloques de sonda.
 
-## Probe 请求的调度
+## Programación de solicitudes de sondeo
 
-Probe Queue 接收到来自 L2 的 Probe 请求后的处理流程如下:
+El flujo de procesamiento después de que la cola de sonda recibe la solicitud de sonda de L2 es el siguiente:
 
-* 分配一项空的 Probe Entry;
-* 向 Main Pipe 发送 probe 请求, 由于时序考虑该请求会被延迟一拍;
-* 等待 Main Pipe 返回应答;
-* 释放 Probe Entry.
+* Asignar una entrada de sonda vacía;
+* Enviar una solicitud de sondeo a la tubería principal. Por cuestiones de tiempo, la solicitud se retrasará un segundo.
+* Espere a que la tubería principal devuelva una respuesta;
+* Liberar entrada de sonda.
 
-## 补充
+## Reponer
 
-### Alias 的处理
+### Procesamiento de alias
 
-NanHu 架构采用了 128KB 的 VIPT cache, 从而引入了 cache 别名问题, NanHu 架构从硬件角度解决别名问题. 如下图所示, L2 Cache 的目录会维护每一个物理块对应的别名位 (即虚地址索引超出页偏移的部分), 保证某一个物理地址在 L1 Cache 中只有一种别名位. 当 L1 Cache 在某个物理地址上想要获取不同的别名位, 即不同的 virtual index 时, L2 Cache 会将另一个 virtual index 对应的 cache 块 probe 下来.
+La arquitectura NanHu utiliza una caché VIPT de 128 KB, lo que genera el problema del alias de caché. La arquitectura NanHu resuelve el problema del alias desde una perspectiva de hardware. Como se muestra en la figura siguiente, el directorio de caché L2 mantiene el bit de alias correspondiente a cada bloque físico (que es decir, el índice de dirección virtual excede la parte de desplazamiento de página) garantiza que una determinada dirección física tenga solo un bit de alias en la caché L1. Cuando la caché L1 desea obtener un bit de alias diferente, es decir, un índice virtual diferente, en una cierta dirección física, la caché L2 sondeará el bloque de caché correspondiente a otro índice virtual.
 
 ![dcache-probe-queue-alias.jpg](../../figs/memblock/dcache-probe-queue-alias.jpg)
 
-由于 L2 发送的 Probe 请求都是按照物理地址, 但是 L1 会按照 VIPT 的方式访问 cache, 所以 L1 还需要知道被 probe 块的别名位. NanHu 架构利用 TileLink 协议中 B 通道的 data 域来传送 2-bit 的别名位, Probe Queue 收到请求后会将别名位和页偏移部分进行拼位, 从而得到访问 DCache 需要用到的索引.
+Dado que las solicitudes de sondeo enviadas por L2 se basan todas en direcciones físicas, pero L1 accederá a la memoria caché en modo VIPT, L1 también necesita conocer el bit de alias del bloque sondeado. La arquitectura NanHu utiliza el campo de datos del canal B en el Protocolo TileLink para transmitir 2 bits Después de recibir la solicitud, la cola de sonda combinará el bit de alias y el desplazamiento de página para obtener el índice necesario para acceder a DCache.
 
-### 原子指令支持
+### Soporte de instrucciones atómicas
 
-在 XiangShan 的设计中, 原子操作 (包括 lr-sc) 是在 DCache 中完成的. 执行 LR 指令时会保证目标地址已经在 DCache 中, 此时为了简化设计, LR 在 Main Pipe 中会注册一个 reservation set, 记录 LR 的地址, 并阻塞对该地址的 Probe. 为了避免带来死锁, Main Pipe 会在等待 SC 一定时间后不再阻塞 Probe (由参数 `LRSCCycles` 和 `LRSCBackOff` 决定), 此时再收到 SC 指令则均被视为 SC fail. 因此, 在 LR 注册 reservation set 后等待 SC 配对的时间里需要阻塞 Probe 请求对 DCache 进行操作.
+En el diseño de XiangShan, las operaciones atómicas (incluida lr-sc) se realizan en DCache. Al ejecutar la instrucción LR, se garantiza que la dirección de destino ya esté en DCache. Para simplificar el diseño, LR registrará un conjunto de reservas en la tubería principal, registra la dirección de LR y bloquea la sonda en esa dirección. Para evitar un bloqueo, la tubería principal dejará de bloquear la sonda después de esperar a SC durante un cierto período de tiempo (determinado por los parámetros `LRSCCycles` y `LRSCBackOff`). ). Cualquier comando SC recibido se considera como un error de SC. Por lo tanto, después de que LR registra el conjunto de reservas y espera el emparejamiento de SC, es necesario bloquear la solicitud de sonda para operar en DCache.
