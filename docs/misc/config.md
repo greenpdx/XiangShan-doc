@@ -1,18 +1,17 @@
-香山参数系统说明
-==================
+Xiangshan parameter system description
+===================
 
-香山的参数系统使用了 Context-Dependent Evironments 这个参数环境, 对应仓库中的 api-config-chipsalliance 这个 submodule. 更详细的使用说明可以参考[这个仓库的文档](https://github.com/chipsalliance/api-config-chipsalliance).
+Xiangshan's parameter system uses the parameter environment Context-Dependent Evironments, which corresponds to the api-config-chipsalliance submodule in the repository. For more detailed instructions, please refer to [the document of this repository](https://github.com/chipsalliance/api-config-chipsalliance).
 
-修改香山的配置可以参考[Configs.scala](https://github.com/OpenXiangShan/XiangShan/blob/master/src/main/scala/top/Configs.scala)中 `MinimalConfig` 的处理方式, 在构建自己的 Config 的时候只需要将与默认配置不同的部分写在 Config 里即可。
+To modify Xiangshan's configuration, please refer to the processing method of `MinimalConfig` in [Configs.scala](https://github.com/OpenXiangShan/XiangShan/blob/master/src/main/scala/top/Configs.scala). When building your own Config, you only need to write the parts that are different from the default configuration in the Config.
 
-使用类似的方式定义自己的 Config 之后可以在生成 Verilog /仿真时使用 `CONFIG` 参数确定使用哪种配置. 例如: `make emu CONFIG=MinimalConfig`.
+After defining your own Config in a similar way, you can use the `CONFIG` parameter to determine which configuration to use when generating Verilog/simulation. For example: `make emu CONFIG=MinimalConfig`.
 
-香山的默认参数在 [Parameters.scala](https://github.com/OpenXiangShan/XiangShan/blob/master/src/main/scala/xiangshan/Parameters.scala) 中, 一般不建议修改。
+The default parameters of Xiangshan are in [Parameters.scala](https://github.com/OpenXiangShan/XiangShan/blob/master/src/main/scala/xiangshan/Parameters.scala), and it is generally not recommended to modify them.
 
+# Example
 
-# 示例
-
-举例来说, 如果想要修改香山的 ROB 和 IBuffer 大小, 则可以[在这里](https://github.com/OpenXiangShan/XiangShan/blob/master/src/main/scala/top/Configs.scala)新建一个 `MyConfig`. `MyConfig` 会继承香山的所有默认参数. 接下来, 在 `MyConfig` 中修改 ROB 和 IBuffer 的参数:
+For example, if you want to modify the ROB and IBuffer size of Xiangshan, you can create a new `MyConfig` [here](https://github.com/OpenXiangShan/XiangShan/blob/master/src/main/scala/top/Configs.scala). `MyConfig` will inherit all the default parameters of Xiangshan. Next, modify the parameters of ROB and IBuffer in `MyConfig`:
 
 ```scala
 class MyConfig(n: Int = 1) extends Config(
@@ -26,5 +25,5 @@ class MyConfig(n: Int = 1) extends Config(
 )
 ```
 
-随后, 就可以在生成仿真程序和 verilog 代码时, 在 `make` 命令中添加 `CONFIG=MyConfig` 这一选项, 将默认的 `DefaultConfig` 替换为 `MyConfig`.
+Then, when generating the simulator and verilog code, add the option `CONFIG=MyConfig` in the `make` command to replace the default `DefaultConfig` with `MyConfig`.
 
