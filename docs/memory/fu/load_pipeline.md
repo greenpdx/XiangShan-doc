@@ -1,110 +1,110 @@
 # Load Pipeline
 
-本章介绍香山处理器南湖架构 load 流水线的设计以及 load 指令的处理流程. 香山处理器(雁栖湖架构)包含两条 load 流水线, 每条 load 流水线分成3个流水级.
+This chapter introduces the design of the load pipeline of the Nanhu architecture of the Xiangshan processor and the processing flow of the load instruction. The Xiangshan processor (Yanqi Lake architecture) contains two load pipelines, each of which is divided into three pipeline stages.
 
 <!-- !!! todo
-    update graph -->
-<!-- ![loadpipe](../../figs/memblock/load-pipeline.png)   -->
+update graph -->
+<!-- ![loadpipe](../../figs/memblock/load-pipeline.png) -->
 
-## 流水线的划分
+## Pipeline division
 
-load 指令执行流水线各级划分如下:
+The load instruction execution pipeline is divided into the following stages:
 
 ### Stage 0
 
-* 指令和操作数被从保留站读出
-* 加法器将操作数与立即数相加, 计算虚拟地址
-* 虚拟地址送入 TLB 进行 TLB 查询
-* 虚拟地址送入数据缓存进行 Tag 索引
+* Instructions and operands are read from the reservation station
+* The adder adds the operand to the immediate value and calculates the virtual address
+* The virtual address is sent to the TLB for TLB query
+* The virtual address is sent to the data cache for Tag indexing
 
 ### Stage 1
 
-* TLB 产生物理地址
-* 完成快速异常检查
-* 虚拟地址进行 Data 索引
-* 物理地址送进数据缓存进行 Tag 比较
-* 虚拟/物理地址送进 store queue / committed store buffer 开始进行 store 到 load 的前递操作
-* 根据一级数据缓存返回的命中向量以及初步异常判断的结果, 产生提前唤醒信号送给保留站
-* 如果在这一级就出现了会导致指令从保留站重发的事件, 通知保留站这条指令需要重发 (`feedbackFast`)
+* TLB generates physical address
+* Complete fast exception check
+* Virtual address performs Data indexing
+* The physical address is sent to the data cache for tag comparison
+* The virtual/physical address is sent to the store queue / committed store buffer to start the forward pass operation from store to load
+* According to the hit vector returned by the first-level data cache and the result of the preliminary exception judgment, an early wake-up signal is generated and sent to the reservation station
+* If an event that causes the instruction to be reissued from the reservation station occurs at this level, notify the reservation station that this instruction needs to be reissued (`feedbackFast`)
 
 ### Stage 2
 
-* 完成异常检查
-* 根据一级数据缓存及前递返回的结果选择数据
-* 根据 load 指令的要求, 对返回的结果做裁剪操作
-* 更新 load queue 中对应项的状态
-* 结果 (整数) 写回到公共数据总线
-* 结果 (浮点) 送到浮点模块
+* Complete the exception check
+* Select data based on the first-level data cache and the result returned by the forward pass
+* Perform a trimming operation on the returned result according to the requirements of the load instruction
+* Update the status of the corresponding item in the load queue
+* The result (integer) is written back to the common data bus
+* The result (floating point) is sent to the floating point module
 
 ### Stage 3
 
-* 根据 dcache 的反馈结果, 更新 load queue 中对应项的状态
-* 根据 dcache 的反馈结果, 反馈到保留站, 通知保留站这条指令是否需要重发 (`feedbackSlow`)
+* According to the feedback result of the dcache, update the status of the corresponding item in the load queue
+* According to the feedback result of the dcache, feedback to the reservation station and notify the reservation station whether this instruction needs to be reissued (`feedbackSlow`)
 
 !!! info
-    Stage 3 负责将一些由于时序原因被延迟的 stage 2 检查结果送出.
+Stage 3 is responsible for sending out some stage 2 check results that are delayed due to timing reasons.
 
 ## Load Miss
 
-一条 miss 的 load 指令会执行以下操作来取得其所需的数据, 这一节将逐个介绍这些机制:
+A load instruction that misses will perform the following operations to obtain the data it needs. This section will introduce these mechanisms one by one:
 
-* 禁用当前指令的提前唤醒
-* 更新 load queue 的状态
-* 分配 dcache MSHR (MissQueue entry)
-* 侦听 dcache refill
-* 写回 miss 的 load 指令
+* Disable early wakeup of the current instruction
+* Update the status of the load queue
+* Allocate dcache MSHR (MissQueue entry)
+* Listen to dcache refill
+* Write back the missed load instruction
 
-在 load stage 1, 根据 dcache tag 比较结果, load 流水线可以得知当前指令是否 miss. 在发生 miss 时, 这条指令的提前唤醒有效位会被设置成`false`, 以**禁用当前指令的提前唤醒**.
+In load stage 1, based on the dcache tag comparison result, the load pipeline can know whether the current instruction misses. When a miss occurs, the early wakeup valid bit of this instruction will be set to `false` to **disable early wakeup of the current instruction**.
 
-在 load stage 2, 如果发现 miss, load 流水线不会写回结果到寄存器堆, 不占用 load 指令写回端口. 同时**更新 load queue 的状态**, 这条发生 miss 的 load 指令此后会在在 load queue 中等待 dcache refill. 与此同时, dcache 会尝试为这条 miss 的 load 指令**分配 dcache MSHR (MissQueue entry)**. 由于分配逻辑复杂, 分配的结果要在下一拍才能反馈到 load queue.
+In load stage 2, if a miss is found, the load pipeline will not write the result back to the register stack and will not occupy the load instruction write-back port. At the same time, **update the status of the load queue**, and this load instruction that has missed will be in the The load queue waits for dcache refill. Meanwhile, dcache will try to allocate dcache MSHR (MissQueue entry) for this miss load instruction. Due to the complex allocation logic, the allocation result can only be fed back to the load queue in the next beat.
 
-在 load stage 3, **根据 dcache MSHR 分配的结果再次更新 load queue 的状态**. 如果 dcache MSHR 分配失败, 则请求保留站重发这条指令.
+In load stage 3, **the status of the load queue is updated again according to the result of dcache MSHR allocation**. If dcache MSHR allocation fails, the reservation station is requested to resend this instruction.
 
-若这条指令成功被分配 dcache MSHR, 后续其将在 load queue 中侦听 dcache refill 的结果. 参见 [load queue: Load Refill](../lsq/load_queue.md#load-refill).
+If this instruction is successfully allocated dcache MSHR, it will subsequently listen to the result of dcache refill in the load queue. See [load queue: Load Refill](../lsq/load_queue.md#load-refill).
 
 ## Replay From RS
 
-load 流水线是**非阻塞的**, 亦即无论出现任何异常情况, 都不会影响流水线中有效指令的流动. 而在除 load miss 之外的异常情况发生导致 load 无法正常执行完时, load 流水线会利用从[保留站重发(Replay From RS)机制](../mechanism.md#Replay-From-RS)来重新执行这条指令. 下面逐个介绍会触发从保留站重发机制的事件:
+The load pipeline is **non-blocking**, that is, no matter what abnormal situation occurs, it will not affect the flow of valid instructions in the pipeline. When an abnormal situation other than load miss occurs and causes the load to fail to complete normally, the load The pipeline will replay this instruction using the [Replay From RS mechanism](../mechanism.md#Replay-From-RS). The following are the events that trigger the replay from reservation station mechanism:
 
 ### TLB miss
 
-**TLB miss** 事件会通过使用 feedbackSlow 端口请求从保留站重发. TLB miss 的指令在重发时存在重发延迟, 在指令在保留站中等待到延迟结束后才被重发. 重发延迟的存在是因为 TLB 重填需要时间, 在 TLB 重填完成之前重发指令还会产生 TLB miss, 是没有意义的.
+**TLB miss** event will request replay from reservation station by using feedbackSlow port. TLB miss instruction will have replay delay when replaying, and it will be replayed after waiting in reservation station until the delay is over. The replay delay exists because TLB refill takes time, and replaying instruction before TLB refill is completed will cause TLB miss, which is meaningless.
 
 ### Bank Conflict
 
-**bank conflict** 事件. bank conflict 事件包括两条 load 流水线之间的 bank 冲突, 以及 load 流水线和 store 操作写 cacheline 之间的冲突(这里的 store 操作指已经提交的 store 从 committed store buffer 写入到 dcache 当中). 目前, 我们仅允许两条 load 指令在不触发 bank 冲突的情况下同时执行. 而对于 load / store 的冲突, 由于时序关系我们没有复杂的检查, 只要 load / store 操作作用在同一个 cacheline 上, 我们就认为发生了冲突. 来源于 bank conflict 的重发使用 feedbackFast 端口. 从保留站重发不设延迟, 保留站在收到 bank 冲突重发请求时可以立即重发这条指令. 
+**bank conflict** event. Bank conflict event includes bank conflict between two load pipelines, and conflict between load pipeline and store operation writing cacheline (store operation here refers to the committed store from committed store buffer to dcache). Currently, we only allow two load instructions to be replayed without triggering bank
 
-### Dcache MSHR Allocate Failure 
+### Dcache MSHR Allocate Failure
 
-**dcache MSHR 分配失败**. dcache MSHR 分配失败的原因参见 [dcache/MissQueue](../dcache/miss_queue.md). dcache MSHR 分配失败导致的重发使用 feedbackSlow 端口发出重发请求. 重发无延迟, 保留站在收到 dcache MSHR 分配失败重发请求时可以立即重发这条指令. 
+**dcache MSHR allocation failure**. For the reasons of dcache MSHR allocation failure, see [dcache/MissQueue](../dcache/miss_queue.md). For retransmission caused by dcache MSHR allocation failure, the retransmission request is sent using the feedbackSlow port. There is no delay for retransmission from the reservation station. The reservation station can immediately retransmit this instruction when receiving the dcache MSHR allocation failure retransmission request.
 
 !!! note
-    这里的设计有待优化, dcache MSHR 分配失败可能来源于几个不同的原因. 分开处理这些情况会有益于性能的提升.
+The design here needs to be optimized. The dcache MSHR allocation failure may come from several different reasons. Separately handling these situations will help improve performance.
 
 ### Store Data Invalid
 
-**Store 地址就绪但数据未就绪**. 这些指令不会更新 load queue 也不会写回, 而是在 load stage 3 通过 feedbackSlow 发出重发请求, 通知保留站, 这条指令**正在等待此前的某条 store 指令的数据就绪**. 在进行 store - load 前递检查的过程中, load 所依赖的 store 的 sqIdx 会被一并查出, 并通过 feedbackSlow 端口反馈到保留站. 这样产生的重发有非固定的延迟. 保留站可以根据查出的 sqIdx 等待到对应的 store data 产生之后再重新发射这条 load 指令. 
+**Store address is ready but data is not ready**. These instructions will not update the load queue or write back, but will issue a reissue request through feedbackSlow in load stage 3 to notify the reservation station that this instruction is **waiting for the data of a previous store instruction to be ready**. During the store-load forward check, the sqIdx of the store that the load depends on will be checked and fed back to the reservation station through the feedbackSlow port. The reissue generated in this way has a non-fixed delay. The reservation station can wait until the corresponding store data is generated according to the found sqIdx before reissuing this load instruction.
 
-## 异常的处理
+## Exception handling
 
-load 流水线可以处理的异常分为两大类: 来自地址检查的异常和来自错误处理的异常. 异常使用单独的异常通路, 时序比 data 通路宽松. 地址检查结果会分级生成来优化时序表现, 参见 [MMU](../mmu/mmu.md) 部分的介绍. 
+The exceptions that the load pipeline can handle are divided into two categories: exceptions from address checking and exceptions from error handling. Exceptions use a separate exception path, and the timing is looser than the data path. The address check results are generated in stages to optimize the timing performance, see [MMU](../mmu/mmu.md) section.
 
-## 预取指令的处理
+## Prefetch instruction processing
 
-目前, 软件预取指令使用与 load 指令类似的处理流程, 软件预取指令会与正常的 load 指令一样进入 load 流水线, 在发现 miss 时向 dcache 的 MissQueue 发出请求, 触发对下层 cache 的访问. 特殊地, 软件预取指令执行期间会屏蔽所有例外, 且不会重发.
+Currently, software prefetch instructions use a similar processing flow to load instructions. Software prefetch instructions will enter the load pipeline like normal load instructions. When a miss is found, a request is sent to the MissQueue of dcache to trigger access to the lower cache. In particular, all exceptions will be blocked during the execution of software prefetch instructions, and no reissue will be made.
 
-## Load 的提前唤醒
+## Early wakeup of load
 
-南湖的保留站支持提前唤醒机制来尽快调度后续的指令. 但是, 南湖架构暂时**不支持推测唤醒机制**. 被提前唤醒的指令必须要能正常地执行, 否则就需要冲刷整个流水线. 如果一条 load 指令正常执行但没有发出提前唤醒信号, 则会导致依赖这条 load 的后续指令晚一个周期才能被发射, 造成少许的性能损失.
+Nanhu's reservation station supports an early wakeup mechanism to schedule subsequent instructions as soon as possible. However, Nanhu architecture currently **does not support the speculative wakeup mechanism**. The instructions that are woken up in advance must be able to execute normally, otherwise the entire pipeline needs to be flushed. If a load instruction is executed normally but no early wakeup signal is issued, the subsequent instructions that depend on this load will be issued one cycle later, resulting in a slight performance loss.
 
-load 流水线会在 load stage 1 向保留站给出快速唤醒信号. 由于 MemBlock 和 IntBlock 之间的线延迟, 这一信号处于关键路径上. 在提前唤醒信号的产生, load 流水线会进行指令能否正常执行的粗略判断. 一旦指令有不能正常执行的迹象, 就不进行提前唤醒.
+The load pipeline will give a fast wakeup signal to the reservation station at load stage 1. Due to The line delay between MemBlock and IntBlock, this signal is on the critical path. When the early wake-up signal is generated, the load pipeline will make a rough judgment on whether the instruction can be executed normally. Once the instruction shows signs of not being able to be executed normally, it will not be woken up in advance.
 
-在极端情况下, load 指令会错误的发出提前唤醒, 此时需要冲刷整个流水线. load 指令错误的发出提前唤醒的条件为：load 指令在 load stage 1 之后发生异常 (来源于数据错误/总线错误).
+In extreme cases, the load instruction will mistakenly issue an early wake-up, and the entire pipeline needs to be flushed. The condition for the load instruction to mistakenly issue an early wake-up is: the load instruction has an exception after load stage 1 (due to data error/bus error).
 
 ## Forward Failure
 
-这一小节介绍南湖架构在虚地址前递失败时的处理. 当 store queue 或者 store buffer 反馈虚地址前递失败时, load 流水线会在 stage 2 将这条指令附加上 `replayInst` (需要从取指重发) 的标签. 在这条指令到达 ROB 队尾时触发重定向. 由于虚地址前递失败是很罕见的现象, 这样的重定向不会对性能产生过大影响.
+This section introduces the processing of the South Lake architecture when the virtual address forward delivery fails. When the store queue or store buffer feedback virtual address forward delivery fails, the load pipeline will attach the label `replayInst` (need to be reissued from instruction fetch) to this instruction in stage 2. Redirection is triggered when this instruction reaches the end of the ROB queue. Since virtual address forward delivery failure is a very rare phenomenon, such redirection will not have a significant impact on performance.
 
-## 调试相关
+## Debug related
 
-load 流水线中设置了 trigger 触发机制. 出于时序考虑, 南湖架构**只支持使用地址作为触发条件**. 
+The trigger mechanism is set in the load pipeline. For timing considerations, the Southlake architecture only supports using addresses as trigger conditions.
